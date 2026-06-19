@@ -46,20 +46,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (identifier: string, code: string): Promise<UserSession> => {
     setIsLoading(true);
     try {
-      const response = await apiClient.post('/auth/otp/verify', { identifier, code });
-      if (!response.data || !response.data.token || !response.data.user) {
+      const response = await apiClient.post('/auth/login', { identifier, code });
+      if (!response.data || !response.data.accessToken || !response.data.user) {
         throw new Error('Invalid authentication response.');
       }
 
-      const { token: jwtToken, user: userProfile } = response.data;
+      const { accessToken, refreshToken, user: userProfile } = response.data;
       const sessionUser: UserSession = {
         userId: userProfile.userId,
         role: userProfile.role,
       };
 
-      localStorage.setItem('token', jwtToken);
+      localStorage.setItem('token', accessToken);
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken);
+      }
       localStorage.setItem('user', JSON.stringify(sessionUser));
-      setToken(jwtToken);
+      setToken(accessToken);
       setUser(sessionUser);
 
       // Redirect based on role
@@ -83,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     setToken(null);
     setUser(null);

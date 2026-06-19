@@ -125,15 +125,15 @@ export default function LoginPage() {
                     <div className="space-y-1">
                       <div className="flex justify-between items-center bg-foreground/[0.02] hover:bg-foreground/[0.04] px-3 py-2 border border-foreground/5 rounded-lg transition-colors">
                         <span className="font-medium text-foreground/80 text-[11px]">Citizen</span>
-                        <code className="text-foreground font-mono text-[11px] select-all">priya.executant@example.com</code>
+                        <code className="text-foreground font-mono text-[11px] select-all">priya.executant@ltn.demo</code>
                       </div>
                       <div className="flex justify-between items-center bg-foreground/[0.02] hover:bg-foreground/[0.04] px-3 py-2 border border-foreground/5 rounded-lg transition-colors">
                         <span className="font-medium text-foreground/80 text-[11px]">Notary</span>
-                        <code className="text-foreground font-mono text-[11px] select-all">rao.notary@example.com</code>
+                        <code className="text-foreground font-mono text-[11px] select-all">rao.notary@ltn.demo</code>
                       </div>
                       <div className="flex justify-between items-center bg-foreground/[0.02] hover:bg-foreground/[0.04] px-3 py-2 border border-foreground/5 rounded-lg transition-colors">
                         <span className="font-medium text-foreground/80 text-[11px]">Auditor</span>
-                        <code className="text-foreground font-mono text-[11px] select-all">bank.officer@example.com</code>
+                        <code className="text-foreground font-mono text-[11px] select-all">bank.officer@ltn.demo</code>
                       </div>
                     </div>
                   </div>
