@@ -1,0 +1,125 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum DbUserRole {
+  CITIZEN
+  NOTARY
+  BANK_OFFICER
+  COURT_CLERK
+  ADMIN
+}
+
+enum DbDocumentStatus {
+  PENDING
+  ONCHAIN_CONFIRMED
+  NOTARY_SIGNED
+  FULLY_EXECUTED
+  DISPUTED
+  REVOKED
+}
+
+enum DbSignerRole {
+  NOTARY
+  BUYER
+  SELLER
+  OTHER
+}
+
+model User {
+  userId             String               @id @default(uuid()) @map("user_id")
+  role               DbUserRole
+  phoneHash          String               @map("phone_hash")
+  emailHash          String               @map("email_hash")
+  documents          Document[]
+  verificationEvents VerificationEvent[]
+
+  @@map("users")
+}
+
+model Document {
+  documentId         String               @id @default(uuid()) @map("document_id")
+  title              String
+  type               String
+  contentHash        String               @map("content_hash")
+  merkleRoot         String?              @map("merkle_root")
+  status             DbDocumentStatus     @default(PENDING)
+  onchainTxSignature String?              @map("onchain_tx_signature")
+  onchainPda         String?              @map("onchain_pda")
+  ownerUserId        String               @map("owner_user_id")
+  owner              User                 @relation(fields: [ownerUserId], references: [userId])
+  requiredSigners    Int                  @default(1) @map("required_signers")
+  signerCount        Int                  @default(0) @map("signer_count")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  signatures         Signature[]
+  verificationEvents VerificationEvent[]
+  fraudScore         FraudScore?
+  ipfsReference      IpfsReference?
+
+  @@index([status, createdAt])
+  @@index([ownerUserId])
+  @@map("documents")
+}
+
+model Notary {
+  notaryId             String      @id @default(uuid()) @map("notary_id")
+  name                 String
+  dscCertificateSerial String      @map("dsc_certificate_serial")
+  publicKey            String      @map("public_key") // Base64 encoding
+  certStatus           String      @map("cert_status") // e.g. 'active', 'expired', 'revoked'
+  signatures           Signature[]
+
+  @@map("notaries")
+}
+
+model Signature {
+  signatureId    String       @id @default(uuid()) @map("signature_id")
+  documentId     String       @map("document_id")
+  document       Document     @relation(fields: [documentId], references: [documentId])
+  notaryId       String       @map("notary_id")
+  notary         Notary       @relation(fields: [notaryId], references: [notaryId])
+  signerRole     DbSignerRole @map("signer_role")
+  signatureBytes String       @map("signature_bytes") // Base64 signature
+  signedAt       DateTime     @default(now()) @map("signed_at")
+
+  @@map("signatures")
+}
+
+model VerificationEvent {
+  eventId      String   @id @default(uuid()) @map("event_id")
+  documentId   String   @map("document_id")
+  eventType    String   @map("event_type")
+  document     Document @relation(fields: [documentId], references: [documentId])
+  actorUserId  String?  @map("actor_user_id")
+  actor        User?    @relation(fields: [actorUserId], references: [userId])
+  actorLabel   String   @map("actor_label") // e.g. 'anonymous_scan'
+  onchainTxRef String?  @map("onchain_tx_ref")
+  occurredAt   DateTime @default(now()) @map("occurred_at")
+
+  @@index([documentId, occurredAt])
+  @@map("verification_events")
+}
+
+model FraudScore {
+  documentId String   @id @map("document_id")
+  document   Document @relation(fields: [documentId], references: [documentId])
+  score      Int
+  signals    Json     @map("signals")
+  computedAt DateTime @default(now()) @map("computed_at")
+
+  @@map("fraud_scores")
+}
+
+model IpfsReference {
+  documentId   String   @id @map("document_id")
+  document     Document @relation(fields: [documentId], references: [documentId])
+  cid          String
+  keyReference String   @map("key_reference")
+
+  @@map("ipfs_references")
+}
