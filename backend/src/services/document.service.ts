@@ -6,6 +6,7 @@ import { BlockchainService } from './blockchain.service';
 import { FraudService } from './fraud.service';
 import { DbDocumentStatus, DbSignerRole } from '@prisma/client';
 import PDFDocument from 'pdfkit';
+import { AppError } from '../config/errors';
 
 export class DocumentService {
   /**
@@ -154,18 +155,18 @@ export class DocumentService {
       where: { documentId }
     });
 
-    if (!doc) throw new Error('DOCUMENT_NOT_FOUND');
+    if (!doc) throw new AppError('Document registry not found.', 404, 'DOCUMENT_NOT_FOUND');
 
     // Fetch Notary details for public key verification
     const notary = await prisma.notary.findUnique({
       where: { notaryId }
     });
 
-    if (!notary) throw new Error('NOTARY_NOT_FOUND');
+    if (!notary) throw new AppError('Notary details not found.', 404, 'NOTARY_NOT_FOUND');
 
     // Cryptographic validation of signature
     const isValid = HashService.verifySignature(doc.contentHash, signatureBytes, notary.publicKey);
-    if (!isValid) throw new Error('INVALID_SIGNATURE');
+    if (!isValid) throw new AppError('The cryptographic signature is invalid.', 400, 'INVALID_SIGNATURE');
 
     // Commit signature to Solana PDA
     const certRefHash = HashService.generateSHA256(certSerial);
