@@ -10,7 +10,7 @@ function getHash(val: string): string {
 async function main() {
   console.log('[SEED] Starting database seeding...');
 
-  // Clean existing tables in proper order
+  // Clean existing tables
   await prisma.ipfsReference.deleteMany();
   await prisma.fraudScore.deleteMany();
   await prisma.signature.deleteMany();
@@ -21,9 +21,8 @@ async function main() {
 
   console.log('[SEED] Cleared existing data.');
 
-  // 1. Create Notary "Advocate Rao"
-  // A standard mock Base64 encoded RSA public key
-  const mockPublicKeyBase64 = 
+  // Notary Record
+  const mockPublicKeyBase64 =
     'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzV1M3m7M9z98k3YFq2+f' +
     'w5RzD3XQ1V4gH9eD6H3I0D4yV8JbWvW/O/e6T3WjWw1oX1jL1w4o8y6w5Q1y2r8M' +
     'sD8XgW7mO8Q9Q1y2r8MsD8XgW7mO8Q9Q1y2r8MsD8XgW7mO8Q9Q1y2r8MsD8XgW7' +
@@ -40,20 +39,10 @@ async function main() {
       certStatus: 'active',
     },
   });
-  console.log(`[SEED] Created Notary: ${notary.name} (ID: ${notary.notaryId})`);
 
-  // 2. Create NOTARY role User "rao.notary@ltn.demo"
-  const notaryEmail = 'rao.notary@ltn.demo';
-  const notaryUser = await prisma.user.create({
-    data: {
-      role: DbUserRole.NOTARY,
-      emailHash: getHash(notaryEmail),
-      phoneHash: '',
-    },
-  });
-  console.log(`[SEED] Created User: ${notaryEmail} as ${notaryUser.role} (ID: ${notaryUser.userId})`);
+  console.log(`[SEED] Created Notary: ${notary.name}`);
 
-  // 3. Create CITIZEN role User "priya.executant@ltn.demo"
+  // Citizen
   const citizenEmail = 'priya.executant@ltn.demo';
   const citizenUser = await prisma.user.create({
     data: {
@@ -62,7 +51,29 @@ async function main() {
       phoneHash: '',
     },
   });
-  console.log(`[SEED] Created User: ${citizenEmail} as ${citizenUser.role} (ID: ${citizenUser.userId})`);
+
+  // Notary User
+  const notaryEmail = 'rao.notary@ltn.demo';
+  const notaryUser = await prisma.user.create({
+    data: {
+      role: DbUserRole.NOTARY,
+      emailHash: getHash(notaryEmail),
+      phoneHash: '',
+    },
+  });
+
+  // Bank Officer (from main branch)
+  const bankOfficer = await prisma.user.create({
+    data: {
+      role: DbUserRole.BANK_OFFICER,
+      emailHash: getHash('bank.officer@ltn.demo'),
+      phoneHash: '',
+    },
+  });
+
+  console.log(`[SEED] Citizen ID: ${citizenUser.userId}`);
+  console.log(`[SEED] Notary ID: ${notaryUser.userId}`);
+  console.log(`[SEED] Bank Officer ID: ${bankOfficer.userId}`);
 
   console.log('[SEED] Database seeding completed successfully.');
 }
