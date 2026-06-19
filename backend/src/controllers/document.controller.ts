@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
-import { RegisterDocumentSchema, RecordSignatureSchema } from '../../../shared/validation';
+import { RecordSignatureSchema } from '../../../shared/validation';
+import { LocalRegisterDocumentSchema } from '../validation/document.validation';
 import { DocumentService } from '../services/document.service';
 import { prisma } from '../config/db';
 import { QrService } from '../services/qr.service';
@@ -21,7 +22,7 @@ export class DocumentController {
         });
       }
 
-      const body = RegisterDocumentSchema.parse(req.body);
+      const body = LocalRegisterDocumentSchema.parse(req.body);
       const doc = await DocumentService.uploadAndRegister(
         req.user!.userId,
         body.title,
