@@ -1,12 +1,12 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
-import { RecordSignatureSchema } from '../../../shared/validation';
-import { LocalRegisterDocumentSchema } from '../validation/document.validation';
+import { LocalRegisterDocumentSchema, LocalRecordSignatureSchema } from '../validation/document.validation';
 import { DocumentService } from '../services/document.service';
 import { prisma } from '../config/db';
 import { QrService } from '../services/qr.service';
 import { FraudService } from '../services/fraud.service';
 import { DbDocumentStatus, DbSignerRole } from '@prisma/client';
+import { logger } from '../config/logger';
 
 export class DocumentController {
   /**
@@ -147,18 +147,38 @@ export class DocumentController {
    * Attaches signature bytes to document.
    */
   public static async recordSignature(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    const reqId = req.headers['x-request-id'] || 'unknown';
     try {
       const { id } = req.params;
-      const body = RecordSignatureSchema.parse(req.body);
+      logger.info(`[SIGNATURE] Incoming request to record signature for document ${id}. Req ID: ${reqId}, Body:`, req.body);
 
-      // Verify the role matches user's session role (or notary onboarding)
-      // Check if signature matches user (mock checks or real notary matching)
-      let notaryId = 'notary-guid-mock';
-      if (req.user?.role === 'NOTARY') {
-        // Look up notary corresponding to this user
-        const notary = await prisma.notary.findFirst();
-        if (notary) notaryId = notary.notaryId;
+      const body = LocalRecordSignatureSchema.parse(req.body);
+      logger.info(`[SIGNATURE] Parsed body validation successfully. Body:`, body);
+
+      // Determine notary ID: request body, or session user lookup, or first notary in DB
+      let notaryId = body.notaryId;
+      if (!notaryId) {
+        if (req.user?.role === 'NOTARY') {
+          const notary = await prisma.notary.findFirst();
+          if (notary) {
+            notaryId = notary.notaryId;
+            logger.info(`[SIGNATURE] Resolved notaryId from logged-in Notary session user: ${notaryId}`);
+          }
+        }
       }
+
+      if (!notaryId) {
+        const fallbackNotary = await prisma.notary.findFirst();
+        if (fallbackNotary) {
+          notaryId = fallbackNotary.notaryId;
+          logger.info(`[SIGNATURE] No notaryId provided in request; fallback to first seeded notary in DB: ${notaryId}`);
+        } else {
+          notaryId = 'notary-guid-mock';
+          logger.warn(`[SIGNATURE] No notaryId provided and no notary found in DB; fallback: ${notaryId}`);
+        }
+      }
+
+      logger.info(`[SIGNATURE] Controller calling DocumentService.recordSignature. Args: documentId=${id}, signerRole=${body.signerRole}, signatureBytes=${body.signatureBytes}, certSerial=${body.certSerial}, notaryId=${notaryId}`);
 
       const sig = await DocumentService.recordSignature(
         id,
@@ -178,7 +198,7 @@ export class DocumentController {
           status: updatedDoc?.status || DbDocumentStatus.NOTARY_SIGNED
         },
         error: null,
-        requestId: req.headers['x-request-id'] || 'unknown'
+        requestId: reqId
       });
     } catch (err) {
       next(err);
