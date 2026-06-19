@@ -29,6 +29,32 @@ export default function CitizenDashboard() {
   const [verifyingFile, setVerifyingFile] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
+  const syncDocumentStatuses = async (localDocs: LocalDocument[]) => {
+    try {
+      const syncedDocs = await Promise.all(
+        localDocs.map(async (doc) => {
+          try {
+            const res = await apiClient.get(`/documents/${doc.documentId}/status`);
+            if (res.data) {
+              return {
+                ...doc,
+                status: res.data.status,
+                createdAt: res.data.timestamp || doc.createdAt,
+              };
+            }
+          } catch (e) {
+            console.warn(`Failed to fetch status for document ${doc.documentId}`, e);
+          }
+          return doc;
+        })
+      );
+      setDocuments(syncedDocs);
+      localStorage.setItem('registered_documents', JSON.stringify(syncedDocs));
+    } catch (err) {
+      console.error('Error syncing document statuses:', err);
+    }
+  };
+
   useEffect(() => {
     if (!user) {
       router.push('/login');
@@ -46,7 +72,9 @@ export default function CitizenDashboard() {
     const stored = localStorage.getItem('registered_documents');
     if (stored) {
       try {
-        setDocuments(JSON.parse(stored));
+        const parsed = JSON.parse(stored) as LocalDocument[];
+        setDocuments(parsed);
+        syncDocumentStatuses(parsed);
       } catch {
         setDocuments([]);
       }

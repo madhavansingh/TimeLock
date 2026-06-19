@@ -5,7 +5,7 @@ import { useAuth } from '@/context/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Lock, ArrowLeft, Download, ShieldCheck, Calendar, Clock, Link as LinkIcon, FileText, CheckCircle2, User, HelpCircle, Activity } from 'lucide-react';
+import { Lock, ArrowLeft, Download, ShieldCheck, ShieldAlert, Calendar, Clock, Link as LinkIcon, FileText, CheckCircle2, User, HelpCircle, Activity } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api';
@@ -39,6 +39,18 @@ interface TimelineEvent {
   occurredAt: string;
 }
 
+interface FraudScoreDetails {
+  documentId: string;
+  score: number;
+  signals: {
+    hashMismatch: boolean;
+    missingBlockchainTx: boolean;
+    missingNotarySignature: boolean;
+    expiredVerification: boolean;
+  };
+  computedAt: string;
+}
+
 export default function DocumentDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const { id } = resolvedParams;
@@ -47,6 +59,7 @@ export default function DocumentDetailsPage({ params }: { params: Promise<{ id: 
 
   const [doc, setDoc] = useState<DocumentDetails | null>(null);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [fraudScore, setFraudScore] = useState<FraudScoreDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -99,6 +112,18 @@ export default function DocumentDetailsPage({ params }: { params: Promise<{ id: 
           setTimeline(custodyRes.data?.timeline || []);
         } catch {
           generateMockTimeline(formattedDoc);
+        }
+
+        // Fetch fraud score for institutional roles
+        if (['BANK_OFFICER', 'COURT_CLERK', 'ADMIN'].includes(user.role)) {
+          try {
+            const fraudRes = await apiClient.get(`/documents/${id}/fraud-score`);
+            if (fraudRes.data) {
+              setFraudScore(fraudRes.data);
+            }
+          } catch (err) {
+            console.warn('Failed to load fraud score:', err);
+          }
         }
       } else {
         generateMockTimeline(formattedDoc);
@@ -337,9 +362,78 @@ export default function DocumentDetailsPage({ params }: { params: Promise<{ id: 
           </Card>
         </div>
 
-        {/* Right Col: Custody Timeline (1 column wide) */}
-        <div>
-          <Card className="border-border bg-card/60 backdrop-blur-sm h-full">
+        {/* Right Col: Custody Timeline & Fraud Assessment (1 column wide) */}
+        <div className="space-y-6">
+          {/* Fraud score card */}
+          {fraudScore && (
+            <Card className="border-border bg-card/60 backdrop-blur-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <ShieldAlert className="h-5 w-5 text-foreground" />
+                  Fraud Assessment
+                </CardTitle>
+                <CardDescription className="text-muted-foreground text-xs">
+                  Real-time rule-based heuristics & integrity check
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Risk score display */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-background/50">
+                  <span className="text-xs font-mono text-muted-foreground">RISK INDEX:</span>
+                  <span className={`text-xl font-mono font-bold ${
+                    fraudScore.score <= 25 
+                      ? 'text-emerald-600' 
+                      : fraudScore.score <= 75 
+                        ? 'text-yellow-600' 
+                        : 'text-red-600'
+                  }`}>
+                    {fraudScore.score} / 100
+                  </span>
+                </div>
+
+                {/* Signals checklist */}
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between p-2 rounded bg-background/40 border border-border/60">
+                    <span className="text-muted-foreground">SHA-256 Fingerprint Hash Match</span>
+                    {fraudScore.signals.hashMismatch ? (
+                      <Badge className="bg-red-500/15 text-red-600 hover:bg-red-500/15 border-0">Mismatch</Badge>
+                    ) : (
+                      <Badge className="bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/15 border-0">Passed</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded bg-background/40 border border-border/60">
+                    <span className="text-muted-foreground">Solana Anchor Verification</span>
+                    {fraudScore.signals.missingBlockchainTx ? (
+                      <Badge className="bg-red-500/15 text-red-600 hover:bg-red-500/15 border-0">Failed</Badge>
+                    ) : (
+                      <Badge className="bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/15 border-0">Passed</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded bg-background/40 border border-border/60">
+                    <span className="text-muted-foreground">Class-3 Notary Endorsement</span>
+                    {fraudScore.signals.missingNotarySignature ? (
+                      <Badge className="bg-yellow-500/15 text-yellow-600 hover:bg-yellow-500/15 border-0">Missing</Badge>
+                    ) : (
+                      <Badge className="bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/15 border-0">Passed</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded bg-background/40 border border-border/60">
+                    <span className="text-muted-foreground">Timestamp Recency Validity</span>
+                    {fraudScore.signals.expiredVerification ? (
+                      <Badge className="bg-yellow-500/15 text-yellow-600 hover:bg-yellow-500/15 border-0">Failed</Badge>
+                    ) : (
+                      <Badge className="bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/15 border-0">Passed</Badge>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+              <CardFooter className="py-2.5 border-t border-border text-[10px] text-muted-foreground font-mono">
+                Computed: {new Date(fraudScore.computedAt).toLocaleString()}
+              </CardFooter>
+            </Card>
+          )}
+
+          <Card className="border-border bg-card/60 backdrop-blur-sm h-auto">
             <CardHeader>
               <CardTitle className="text-lg font-bold text-foreground flex items-center gap-2">
                 <Activity className="h-5 w-5 text-foreground" />
