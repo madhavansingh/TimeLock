@@ -26,7 +26,7 @@ const documentTypes = [
 ];
 
 const mockNotaries = [
-  { notaryId: '7df83c92-d3a9-4672-9b2f-2d93e110b9ad', name: 'Advocate Rao (Class-3 DSC Active)' }
+  { notaryId: '688c6761-c8d3-4628-8792-87f62f8cb5a5', name: 'Advocate Rao (Class-3 DSC Active)' }
 ];
 
 export default function RegisterDocument() {
@@ -35,7 +35,7 @@ export default function RegisterDocument() {
 
   const [title, setTitle] = useState('');
   const [type, setType] = useState('');
-  const [notaryId, setNotaryId] = useState('7df83c92-d3a9-4672-9b2f-2d93e110b9ad');
+  const [notaryId, setNotaryId] = useState('688c6761-c8d3-4628-8792-87f62f8cb5a5');
   const [requiredSigners, setRequiredSigners] = useState(1);
   const [file, setFile] = useState<File | null>(null);
 
