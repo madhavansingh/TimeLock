@@ -2,18 +2,23 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { prisma } from '../config/db';
 import { DbUserRole } from '@prisma/client';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_hackathon';
+import { config } from '../config/env';
+import { sendOtpEmail } from '../config/mail';
+import { logger } from '../config/logger';
 
 // In-memory OTP storage for sandbox environment
 const otpStore = new Map<string, { code: string; expiresAt: number; attempts: number }>();
 
 export class AuthService {
   /**
-   * Generates a 6-digit OTP and logs it in the cache database.
+   * Generates a 6-digit OTP, sends it via email (if email) and stores it in cache.
    */
   public static async generateOtp(identifier: string): Promise<string> {
-    const code = process.env.NODE_ENV === 'test' ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
+    // In non-production envs, default to 123456 for easy developer testing.
+    const code = config.nodeEnv === 'production'
+      ? Math.floor(100000 + Math.random() * 900000).toString()
+      : '123456';
+    
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
 
     otpStore.set(identifier, {
@@ -22,7 +27,13 @@ export class AuthService {
       attempts: 0
     });
 
-    console.log(`[AUTH] Generated OTP for ${identifier}: ${code}`);
+    logger.info(`[AUTH] Generated OTP for ${identifier}: ${code}`);
+
+    // If identifier is an email, trigger Nodemailer send
+    if (identifier.includes('@')) {
+      await sendOtpEmail(identifier, code);
+    }
+
     return code;
   }
 
@@ -32,7 +43,7 @@ export class AuthService {
   public static async verifyOtp(
     identifier: string,
     code: string
-  ): Promise<{ token: string; userId: string; role: DbUserRole } | null> {
+  ): Promise<{ userId: string; role: DbUserRole } | null> {
     const record = otpStore.get(identifier);
 
     if (!record) return null;
@@ -74,22 +85,64 @@ export class AuthService {
           emailHash: identifier.includes('@') ? hash : ''
         }
       });
+      logger.info(`[AUTH] Auto-registered new CITIZEN user for hash ${hash}`);
     }
 
-    // Generate short-lived JWT token
-    const token = jwt.sign(
-      {
-        userId: user.userId,
-        role: user.role
-      },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
     return {
-      token,
       userId: user.userId,
       role: user.role
     };
+  }
+
+  /**
+   * Generates short-lived Access Token and long-lived Refresh Token.
+   */
+  public static generateTokenPair(userId: string, role: DbUserRole): { accessToken: string; refreshToken: string } {
+    const accessToken = jwt.sign(
+      {
+        userId,
+        role,
+        tokenType: 'access'
+      },
+      config.jwtSecret,
+      { expiresIn: '15m' } // Short-lived access token
+    );
+
+    const refreshToken = jwt.sign(
+      {
+        userId,
+        role,
+        tokenType: 'refresh'
+      },
+      config.jwtSecret,
+      { expiresIn: '7d' } // Long-lived refresh token
+    );
+
+    return { accessToken, refreshToken };
+  }
+
+  /**
+   * Cryptographically verifies a refresh token.
+   */
+  public static verifyRefreshToken(token: string): { userId: string; role: DbUserRole } {
+    try {
+      const decoded = jwt.verify(token, config.jwtSecret) as {
+        userId: string;
+        role: DbUserRole;
+        tokenType: string;
+      };
+
+      if (decoded.tokenType !== 'refresh') {
+        throw new Error('INVALID_TOKEN_TYPE');
+      }
+
+      return {
+        userId: decoded.userId,
+        role: decoded.role
+      };
+    } catch (err) {
+      logger.warn('Failed to verify refresh token', { error: (err as Error).message });
+      throw new Error('INVALID_TOKEN');
+    }
   }
 }

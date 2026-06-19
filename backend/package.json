@@ -16,6 +16,7 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
+    "nodemailer": "^9.0.1",
     "pdfkit": "^0.15.0",
     "qrcode": "^1.5.3",
     "zod": "^3.23.8"
@@ -26,10 +27,15 @@
     "@types/jsonwebtoken": "^9.0.6",
     "@types/multer": "^1.4.11",
     "@types/node": "^20.12.7",
+    "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.13.4",
     "@types/qrcode": "^1.5.5",
     "prisma": "^5.13.0",
+    "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   }
 }
