@@ -150,7 +150,14 @@ export class DocumentController {
                   certStatus: doc.assignedNotary.certStatus
                 }
               : null,
-            notarySummary: null,
+            notarySummary: notarySig
+              ? {
+                  notaryId: notarySig.notaryId,
+                  name: notarySig.notary.name,
+                  dscCertificateSerial: notarySig.notary.dscCertificateSerial,
+                  signedAt: notarySig.signedAt.toISOString()
+                }
+              : null,
             signers: {
               required: doc.requiredSigners,
               completed: completedSignatures
@@ -160,10 +167,10 @@ export class DocumentController {
             riskAnalysis: null,
             viewProfile,
             metadata: doc.metadata ? {
-              surveyNumber: '[REDACTED]',
-              propertyId: '[REDACTED]',
+              surveyNumber: doc.metadata.surveyNumber,
+              propertyId: doc.metadata.propertyId,
               registrationNumber: '[REDACTED]',
-              ownerName: '[REDACTED FOR PRIVACY]'
+              ownerName: doc.metadata.ownerName
             } : null,
             verificationCase: doc.verificationCase ? {
               caseId: doc.verificationCase.caseId,

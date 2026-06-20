@@ -49,10 +49,20 @@ export class DocumentService {
 
       if (payment.documentId) {
         throw new AppError('Payment has already been associated with another document.', 400, 'PAYMENT_ALREADY_USED');
-      }
+x      }
     }
 
     // 0.5. Validate Notary
+    // 0. Validate Owner User exists
+    console.log(`[DocumentService] Attempting to create document. Owner user ID: ${userId}`);
+    const ownerExists = await prisma.user.findUnique({
+      where: { userId }
+    });
+    if (!ownerExists) {
+      throw new AppError('The authenticated owner user does not exist in the database.', 401, 'OWNER_NOT_FOUND');
+    }
+
+    // Validate Notary
     const notary = await prisma.notary.findUnique({
       where: { notaryId }
     });

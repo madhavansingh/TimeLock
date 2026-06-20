@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { prisma } from '../config/db';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_hackathon';
 
@@ -10,7 +11,7 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
@@ -27,6 +28,21 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+    const userExists = await prisma.user.findUnique({
+      where: { userId: decoded.userId }
+    });
+    
+    if (!userExists) {
+      return res.status(401).json({
+        data: null,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'The user account associated with this session no longer exists.'
+        },
+        requestId: req.headers['x-request-id'] || 'unknown'
+      });
+    }
+
     (req as AuthenticatedRequest).user = decoded;
     next();
   } catch (err) {
@@ -41,7 +57,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
   }
 }
 
-export function optionalAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+export async function optionalAuthMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return next();
@@ -51,7 +67,15 @@ export function optionalAuthMiddleware(req: Request, res: Response, next: NextFu
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
-    (req as AuthenticatedRequest).user = decoded;
+    const userExists = await prisma.user.findUnique({
+      where: { userId: decoded.userId }
+    });
+    
+    if (userExists) {
+      (req as AuthenticatedRequest).user = decoded;
+    } else {
+      (req as AuthenticatedRequest).user = undefined;
+    }
   } catch (err) {
     // Treat invalid or expired token as anonymous/unauthenticated
     (req as AuthenticatedRequest).user = undefined;
