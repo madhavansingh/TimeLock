@@ -1,6 +1,8 @@
 import { PrismaClient, DbUserRole } from '@prisma/client';
 import * as crypto from 'crypto';
 import nacl from 'tweetnacl';
+// @ts-ignore
+import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -62,42 +64,104 @@ async function main() {
 
   console.log(`[SEED] Created Notaries: ${notary.name}, ${sharmaNotary.name}`);
 
-  // Citizen A
+  const defaultPasswordHash = bcrypt.hashSync('Demo@123', 10);
+
+  // New Demo Accounts
+  const demoCitizen = await prisma.user.create({
+    data: {
+      role: DbUserRole.CITIZEN,
+      name: 'Demo Citizen',
+      email: 'citizen@ltn.demo',
+      passwordHash: defaultPasswordHash,
+      emailHash: getHash('citizen@ltn.demo'),
+      phoneHash: '',
+    },
+  });
+
+  const demoNotary = await prisma.user.create({
+    data: {
+      role: DbUserRole.NOTARY,
+      name: 'Demo Notary',
+      email: 'notary@ltn.demo',
+      passwordHash: defaultPasswordHash,
+      emailHash: getHash('notary@ltn.demo'),
+      phoneHash: '',
+      notaryId: notaryId, // Link to Rao
+    },
+  });
+
+  const demoJudge = await prisma.user.create({
+    data: {
+      role: DbUserRole.JUDGE,
+      name: 'Demo Judge',
+      email: 'judge@ltn.demo',
+      passwordHash: defaultPasswordHash,
+      emailHash: getHash('judge@ltn.demo'),
+      phoneHash: '',
+    },
+  });
+
+  const demoAdmin = await prisma.user.create({
+    data: {
+      role: DbUserRole.ADMIN,
+      name: 'Demo Admin',
+      email: 'admin@ltn.demo',
+      passwordHash: defaultPasswordHash,
+      emailHash: getHash('admin@ltn.demo'),
+      phoneHash: '',
+    },
+  });
+
+  console.log('[SEED] Created Demo Accounts (Citizen, Notary, Judge, Admin)');
+
+  // Legacy/existing citizen A
   const citizenEmail = 'priya.executant@ltn.demo';
   const citizenUser = await prisma.user.create({
     data: {
       role: DbUserRole.CITIZEN,
+      name: 'Priya Executant',
+      email: citizenEmail,
+      passwordHash: defaultPasswordHash,
       emailHash: getHash(citizenEmail),
       phoneHash: '',
     },
   });
 
-  // Citizen B
+  // Legacy/existing citizen B
   const citizenBEmail = 'amit.executant@ltn.demo';
   const citizenBUser = await prisma.user.create({
     data: {
       role: DbUserRole.CITIZEN,
+      name: 'Amit Executant',
+      email: citizenBEmail,
+      passwordHash: defaultPasswordHash,
       emailHash: getHash(citizenBEmail),
       phoneHash: '',
     },
   });
 
-  // Notary User 1 (Rao)
+  // Legacy/existing Notary User 1 (Rao)
   const notaryEmail = 'rao.notary@ltn.demo';
   const notaryUser = await prisma.user.create({
     data: {
       role: DbUserRole.NOTARY,
+      name: 'Rao Notary',
+      email: notaryEmail,
+      passwordHash: defaultPasswordHash,
       emailHash: getHash(notaryEmail),
       phoneHash: '',
       notaryId: notaryId,
     },
   });
 
-  // Notary User 2 (Sharma)
+  // Legacy/existing Notary User 2 (Sharma)
   const sharmaNotaryEmail = 'sharma.notary@ltn.demo';
   const sharmaNotaryUser = await prisma.user.create({
     data: {
       role: DbUserRole.NOTARY,
+      name: 'Sharma Notary',
+      email: sharmaNotaryEmail,
+      passwordHash: defaultPasswordHash,
       emailHash: getHash(sharmaNotaryEmail),
       phoneHash: '',
       notaryId: sharmaNotaryId,
@@ -108,6 +172,9 @@ async function main() {
   const bankOfficer = await prisma.user.create({
     data: {
       role: DbUserRole.BANK_OFFICER,
+      name: 'Bank Officer',
+      email: 'bank.officer@ltn.demo',
+      passwordHash: defaultPasswordHash,
       emailHash: getHash('bank.officer@ltn.demo'),
       phoneHash: '',
     },

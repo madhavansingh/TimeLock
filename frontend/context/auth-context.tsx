@@ -13,7 +13,7 @@ interface AuthContextType {
   user: UserSession | null;
   token: string | null;
   isLoading: boolean;
-  login: (identifier: string, code: string) => Promise<UserSession>;
+  login: (email: string, passwordPlain: string) => Promise<UserSession>;
   logout: () => void;
 }
 
@@ -43,10 +43,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const login = async (identifier: string, code: string): Promise<UserSession> => {
+  const login = async (email: string, passwordPlain: string): Promise<UserSession> => {
     setIsLoading(true);
     try {
-      const response = await apiClient.post('/auth/login', { identifier, code });
+      const response = await apiClient.post('/auth/login', { email, password: passwordPlain });
       if (!response.data || !response.data.accessToken || !response.data.user) {
         throw new Error('Invalid authentication response.');
       }
@@ -70,6 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         router.push('/dashboard');
       } else if (sessionUser.role === 'NOTARY') {
         router.push('/notary');
+      } else if (sessionUser.role === 'JUDGE') {
+        router.push('/judge');
+      } else if (sessionUser.role === 'ADMIN') {
+        router.push('/admin/system-health');
       } else {
         // Institutional/Auditor dashboards (e.g. Bank Officer, Court Clerk)
         router.push('/search');
