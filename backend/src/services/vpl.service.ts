@@ -6,6 +6,7 @@ import { AppError, NotFoundError } from '../config/errors';
 import { PublicKey } from '@solana/web3.js';
 import { AiAssessmentService } from './ai/ai-assessment.service';
 import { VerificationCopilotService } from './ai/verification-copilot.service';
+import { N8nService } from './n8n.service';
 
 export interface ChecklistItem {
   id: string;
@@ -466,7 +467,7 @@ export class VplService {
         newStatus = DbDocumentStatus.FULLY_EXECUTED;
       }
 
-      await prisma.document.update({
+      const updatedDoc = await prisma.document.update({
         where: { documentId },
         data: {
           status: newStatus,
@@ -480,8 +481,14 @@ export class VplService {
               }
             ]
           }
+        },
+        include: {
+          metadata: true
         }
       });
+
+      // Trigger n8n Document Verified Webhook (fire-and-forget)
+      N8nService.notifyDocumentVerified(updatedDoc, c.notary.name, 'NOTARY', finalScore);
     }
 
     return updatedCase;

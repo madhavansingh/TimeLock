@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import { prisma } from '../config/db';
 import { DbUserRole } from '@prisma/client';
 import { config } from '../config/env';
+// @ts-ignore
+import bcrypt from 'bcrypt';
 import { sendOtpEmail } from '../config/mail';
 import { logger } from '../config/logger';
 import { SmsProviderFactory } from './sms.provider';
@@ -175,5 +177,89 @@ export class AuthService {
       logger.warn('Failed to verify refresh token', { error: (err as Error).message });
       throw new Error('INVALID_TOKEN');
     }
+  }
+
+  /**
+   * Registers a new user with email and hashed password.
+   */
+  public static async registerUser(
+    name: string,
+    email: string,
+    passwordPlain: string,
+    role: DbUserRole
+  ): Promise<{ userId: string; role: DbUserRole; name: string | null; email: string }> {
+    const passwordHash = await bcrypt.hash(passwordPlain, 10);
+    const hash = crypto.createHash('sha256').update(email).digest('hex');
+    
+    // Check if user already exists
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [{ email }, { emailHash: hash }]
+      }
+    });
+    if (existing) {
+      throw new Error('USER_ALREADY_EXISTS');
+    }
+
+    let notaryId: string | undefined = undefined;
+    if (role === DbUserRole.NOTARY) {
+      const notaryRecord = await prisma.notary.create({
+        data: {
+          name,
+          dscCertificateSerial: `CA-3-${Math.random().toString(36).substring(2, 10)}`,
+          publicKey: Buffer.from(crypto.randomBytes(32)).toString('base64'),
+          certStatus: 'active',
+          isAccredited: true
+        }
+      });
+      notaryId = notaryRecord.notaryId;
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        role,
+        name,
+        email,
+        passwordHash,
+        emailHash: hash,
+        phoneHash: '',
+        notaryId
+      }
+    });
+
+    return {
+      userId: user.userId,
+      role: user.role,
+      name: user.name,
+      email: user.email
+    };
+  }
+
+  /**
+   * Validates user password and returns user profile.
+   */
+  public static async loginWithPassword(
+    email: string,
+    passwordPlain: string
+  ): Promise<{ userId: string; role: DbUserRole; name: string | null; email: string } | null> {
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!user || !user.passwordHash) {
+      return null;
+    }
+
+    const isMatch = await bcrypt.compare(passwordPlain, user.passwordHash);
+    if (!isMatch) {
+      return null;
+    }
+
+    return {
+      userId: user.userId,
+      role: user.role,
+      name: user.name,
+      email: user.email
+    };
   }
 }

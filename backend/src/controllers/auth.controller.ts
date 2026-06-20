@@ -1,11 +1,92 @@
 import { Request, Response, NextFunction } from 'express';
 import { OtpRequestSchema } from '../shared/validation';
-import { LoginRequestSchema, RefreshRequestSchema } from '../validation/auth.validation';
+import { LoginRequestSchema, RefreshRequestSchema, RegisterRequestSchema, PasswordLoginRequestSchema } from '../validation/auth.validation';
 import { AuthService } from '../services/auth.service';
 import { prisma } from '../config/db';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 
 export class AuthController {
+  /**
+   * Register a new user.
+   */
+  public static async register(req: Request, res: Response, next: NextFunction) {
+    try {
+      const payload = RegisterRequestSchema.parse(req.body);
+      const user = await AuthService.registerUser(
+        payload.name,
+        payload.email,
+        payload.password,
+        payload.role as any
+      );
+
+      res.status(201).json({
+        data: {
+          user: {
+            userId: user.userId,
+            role: user.role,
+            name: user.name,
+            email: user.email
+          }
+        },
+        error: null,
+        requestId: req.headers['x-request-id'] || 'unknown'
+      });
+    } catch (err: any) {
+      if (err.message === 'USER_ALREADY_EXISTS') {
+        return res.status(400).json({
+          data: null,
+          error: {
+            code: 'USER_ALREADY_EXISTS',
+            message: 'A user with this email address already exists.'
+          },
+          requestId: req.headers['x-request-id'] || 'unknown'
+        });
+      }
+      next(err);
+    }
+  }
+
+  /**
+   * Login using email and password.
+   */
+  public static async passwordLogin(req: Request, res: Response, next: NextFunction) {
+    try {
+      const payload = PasswordLoginRequestSchema.parse(req.body);
+      const userContext = await AuthService.loginWithPassword(payload.email, payload.password);
+
+      if (!userContext) {
+        return res.status(401).json({
+          data: null,
+          error: {
+            code: 'INVALID_CREDENTIALS',
+            message: 'Invalid email or password.'
+          },
+          requestId: req.headers['x-request-id'] || 'unknown'
+        });
+      }
+
+      const tokens = AuthService.generateTokenPair(userContext.userId, userContext.role);
+
+      res.status(200).json({
+        data: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          role: userContext.role,
+          user: {
+            userId: userContext.userId,
+            role: userContext.role,
+            name: userContext.name,
+            email: userContext.email
+          }
+        },
+        error: null,
+        requestId: req.headers['x-request-id'] || 'unknown'
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
   /**
    * Request a 6-digit verification code. Sent via Nodemailer email.
    */

@@ -156,6 +156,10 @@ export const config = {
   // Public App URL (used in QR code generation and verification links)
   frontendUrl: optionalEnv('FRONTEND_URL', optionalEnv('PUBLIC_APP_URL', 'http://10.131.235.84:3000')),
   publicAppUrl: optionalEnv('FRONTEND_URL', optionalEnv('PUBLIC_APP_URL', 'http://10.131.235.84:3000')),
+
+  // n8n Webhooks
+  n8nDocumentAssignedWebhook: optionalEnv('N8N_DOCUMENT_ASSIGNED_WEBHOOK', 'https://kantik.app.n8n.cloud/webhook/document-assigned'),
+  n8nDocumentVerifiedWebhook: optionalEnv('N8N_DOCUMENT_VERIFIED_WEBHOOK', 'https://kantik.app.n8n.cloud/webhook/document-verified'),
 } as const;
 
 // Log non-sensitive config on startup (development only)

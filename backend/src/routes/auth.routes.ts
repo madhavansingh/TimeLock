@@ -13,7 +13,8 @@ const authLimiter = createRateLimiter({
 });
 
 router.post('/otp/request', authLimiter, AuthController.requestOtp);
-router.post('/login', authLimiter, AuthController.login);
+router.post('/register', authLimiter, AuthController.register);
+router.post('/login', authLimiter, AuthController.passwordLogin);
 router.post('/refresh', AuthController.refresh);
 router.get('/me', authMiddleware, AuthController.getMe);
 

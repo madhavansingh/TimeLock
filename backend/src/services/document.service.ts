@@ -12,6 +12,7 @@ import { AiAssessmentService } from './ai/ai-assessment.service';
 import { VerificationCopilotService } from './ai/verification-copilot.service';
 import { AppError } from '../config/errors';
 import { PublicKey } from '@solana/web3.js';
+import { N8nService } from './n8n.service';
 
 export class DocumentService {
   /**
@@ -171,6 +172,9 @@ export class DocumentService {
       // Asynchronously trigger AI Assessment Phase 2 & 3
       AiAssessmentService.triggerRegeneration(doc.documentId, 'INITIAL_REGISTRATION');
       VerificationCopilotService.triggerRegeneration(doc.documentId, 'INITIAL_REGISTRATION');
+
+      // Trigger n8n Document Assigned Webhook (fire-and-forget)
+      N8nService.notifyDocumentAssigned(updatedDoc);
 
       return updatedDoc;
     } catch (err) {

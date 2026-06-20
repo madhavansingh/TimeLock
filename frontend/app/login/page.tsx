@@ -12,51 +12,40 @@ import Link from 'next/link';
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const [identifier, setIdentifier] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [code, setCode] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
-  const handleRequestOtp = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!identifier) {
-      setErrorMsg('Please enter your Email address.');
-      return;
-    }
-    if (!identifier.includes('@')) {
-      setErrorMsg('Please enter a valid email address.');
+    if (!email || !password) {
+      setErrorMsg('Please enter both email and password.');
       return;
     }
     setLoading(true);
     setErrorMsg('');
     setInfoMsg('');
     try {
-      await apiClient.post('/auth/otp/request', { identifier });
-      setOtpSent(true);
-      const isDev = process.env.NODE_ENV === 'development';
-      setInfoMsg(isDev ? 'OTP sent successfully! (Use "123456" for this demo)' : 'OTP sent successfully! Check your inbox.');
+      await login(email, password);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to request OTP. Please verify your format.');
+      setErrorMsg(err.message || 'Invalid email or password.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!code || code.length !== 6) {
-      setErrorMsg('Please enter a valid 6-digit OTP code.');
-      return;
-    }
+  const handleQuickLogin = async (demoEmail: string) => {
+    setEmail(demoEmail);
+    setPassword('Demo@123');
     setLoading(true);
     setErrorMsg('');
     setInfoMsg('');
     try {
-      await login(identifier, code);
+      await login(demoEmail, 'Demo@123');
     } catch (err: any) {
-      setErrorMsg(err.message || 'Incorrect OTP code or session expired.');
+      setErrorMsg(err.message || 'Failed to login with demo account.');
     } finally {
       setLoading(false);
     }
@@ -81,12 +70,10 @@ export default function LoginPage() {
         <Card className="border-border bg-card/60 backdrop-blur-md">
           <CardHeader className="space-y-1.5 text-center">
             <CardTitle className="text-2xl font-bold tracking-tight text-foreground">
-              {otpSent ? 'Enter Security Code' : 'Sign In'}
+              Sign In
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              {otpSent 
-                ? `Enter the 6-digit code sent to ${identifier}` 
-                : 'Secure workspace access for citizens, notaries, and auditors'}
+              Secure workspace access for citizens, notaries, judges, and administrators
             </CardDescription>
           </CardHeader>
 
@@ -103,99 +90,99 @@ export default function LoginPage() {
               </div>
             )}
 
-            {!otpSent ? (
-              <form onSubmit={handleRequestOtp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="identifier" className="text-foreground/80">Email Address</Label>
-                  <div className="relative">
-                    <Input
-                      id="identifier"
-                      type="email"
-                      placeholder="e.g., priya.executant@example.com"
-                      value={identifier}
-                      onChange={(e) => setIdentifier(e.target.value)}
-                      disabled={loading}
-                      className="border-border bg-background pl-10 text-foreground placeholder:text-muted-foreground/50 focus-visible:ring-ring"
-                    />
-                    <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
-                      <Mail className="h-4.5 w-4.5" />
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground space-y-1.5 mt-3 pt-3 border-t border-border/50">
-                    <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/80 mb-2">Demo Accounts:</p>
-                    <div className="space-y-1">
-                      <div className="flex justify-between items-center bg-foreground/[0.02] hover:bg-foreground/[0.04] px-3 py-2 border border-foreground/5 rounded-lg transition-colors">
-                        <span className="font-medium text-foreground/80 text-[11px]">Citizen</span>
-                        <code className="text-foreground font-mono text-[11px] select-all">priya.executant@ltn.demo</code>
-                      </div>
-                      <div className="flex justify-between items-center bg-foreground/[0.02] hover:bg-foreground/[0.04] px-3 py-2 border border-foreground/5 rounded-lg transition-colors">
-                        <span className="font-medium text-foreground/80 text-[11px]">Notary</span>
-                        <code className="text-foreground font-mono text-[11px] select-all">rao.notary@ltn.demo</code>
-                      </div>
-                      <div className="flex justify-between items-center bg-foreground/[0.02] hover:bg-foreground/[0.04] px-3 py-2 border border-foreground/5 rounded-lg transition-colors">
-                        <span className="font-medium text-foreground/80 text-[11px]">Auditor</span>
-                        <code className="text-foreground font-mono text-[11px] select-all">bank.officer@ltn.demo</code>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-full">
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Requesting OTP...
-                    </>
-                  ) : (
-                    <>
-                      Send One-Time Passcode
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </>
-                  )}
-                </Button>
-              </form>
-            ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="code" className="text-foreground/80">One-Time Password (OTP)</Label>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-foreground/80">Email Address</Label>
+                <div className="relative">
                   <Input
-                    id="code"
-                    type="text"
-                    maxLength={6}
-                    placeholder="Enter 6-digit code"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                    id="email"
+                    type="email"
+                    placeholder="e.g., citizen@ltn.demo"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     disabled={loading}
-                    className="border-border bg-background text-center text-lg font-mono tracking-[0.4em] placeholder:tracking-normal text-foreground focus-visible:ring-ring"
+                    className="border-border bg-background pl-10 text-foreground placeholder:text-muted-foreground/50 focus-visible:ring-ring"
                   />
+                  <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+                    <Mail className="h-4.5 w-4.5" />
+                  </div>
                 </div>
+              </div>
 
-                <div className="flex gap-3">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-foreground/80">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     disabled={loading}
-                    onClick={() => setOtpSent(false)}
-                    className="flex-1 border-border bg-transparent hover:bg-accent text-foreground rounded-full"
-                  >
-                    Back
-                  </Button>
-                  <Button type="submit" disabled={loading} className="flex-[2] bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-full">
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Verifying...
-                      </>
-                    ) : (
-                      <>
-                        Verify OTP
-                        <ShieldCheck className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
+                    className="border-border bg-background pl-10 text-foreground placeholder:text-muted-foreground/50 focus-visible:ring-ring"
+                  />
+                  <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+                    <Lock className="h-4.5 w-4.5" />
+                  </div>
                 </div>
-              </form>
-            )}
+              </div>
+
+              <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-full mt-2">
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing In...
+                  </>
+                ) : (
+                  <>
+                    Sign In
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </form>
+
+            <div className="text-xs text-muted-foreground space-y-1.5 mt-3 pt-3 border-t border-border/50">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/80 mb-2">Judge & Demo Quick Logins:</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('citizen@ltn.demo')}
+                  className="bg-foreground/[0.02] hover:bg-foreground/[0.04] text-[11px] h-9 rounded-lg"
+                >
+                  Login as Citizen
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('notary@ltn.demo')}
+                  className="bg-foreground/[0.02] hover:bg-foreground/[0.04] text-[11px] h-9 rounded-lg"
+                >
+                  Login as Notary
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('judge@ltn.demo')}
+                  className="bg-foreground/[0.02] hover:bg-foreground/[0.04] text-[11px] h-9 rounded-lg"
+                >
+                  Login as Judge
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('admin@ltn.demo')}
+                  className="bg-foreground/[0.02] hover:bg-foreground/[0.04] text-[11px] h-9 rounded-lg"
+                >
+                  Login as Admin
+                </Button>
+              </div>
+            </div>
           </CardContent>
 
           <CardFooter className="border-t border-border bg-muted/20 py-4 text-center justify-center text-xs text-muted-foreground">

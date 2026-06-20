@@ -11,8 +11,11 @@ datasource db {
 model User {
   userId             String              @id @default(uuid()) @map("user_id")
   role               DbUserRole
-  phoneHash          String              @map("phone_hash")
-  emailHash          String              @map("email_hash")
+  name               String?
+  email              String              @unique @default("")
+  passwordHash       String              @default("") @map("password_hash")
+  phoneHash          String              @default("") @map("phone_hash")
+  emailHash          String              @default("") @map("email_hash")
   notaryId           String?             @map("notary_id")
   notary             Notary?             @relation(fields: [notaryId], references: [notaryId], onDelete: SetNull)
   documents          Document[]
@@ -600,6 +603,8 @@ enum DbUserRole {
   BANK_OFFICER
   COURT_CLERK
   ADMIN
+  ADVOCATE
+  JUDGE
 }
 
 enum DbDocumentStatus {

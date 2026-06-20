@@ -14,7 +14,9 @@ export enum UserRole {
   NOTARY = 'NOTARY',
   BANK_OFFICER = 'BANK_OFFICER',
   COURT_CLERK = 'COURT_CLERK',
-  ADMIN = 'ADMIN'
+  ADMIN = 'ADMIN',
+  ADVOCATE = 'ADVOCATE',
+  JUDGE = 'JUDGE'
 }
 
 export enum SignerRole {
