@@ -1,4 +1,4 @@
-import { SolanaClient, DocumentProgramClient } from 'blockchain';
+import { SolanaClient, DocumentProgramClient } from './solana';
 import { config } from '../config/env';
 import { BlockchainError } from '../config/errors';
 import { logger } from '../config/logger';
