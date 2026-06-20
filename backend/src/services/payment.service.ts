@@ -19,7 +19,7 @@ export class PaymentService {
 
   /**
    * Creates a Razorpay order and stores a PENDING payment record.
-   * @param amountInInr Amount in INR (e.g. 99)
+   * @param amountInInr Amount in INR (e.g. 10)
    */
   public static async createOrder(amountInInr: number) {
     const { keyId, keySecret } = this.getCredentials();

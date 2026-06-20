@@ -40,7 +40,7 @@ async function run() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ amount: 99 })
+      body: JSON.stringify({ amount: 10 })
     });
     const orderRes = await orderReq.json() as any;
     console.log('   Response:', orderRes);

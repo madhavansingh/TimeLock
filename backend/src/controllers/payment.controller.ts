@@ -4,7 +4,7 @@ import { PaymentService } from '../services/payment.service';
 import { z } from 'zod';
 
 const CreateOrderSchema = z.object({
-  amount: z.number().int().positive().optional().default(99),
+  amount: z.number().int().positive().optional().default(10),
 });
 
 const VerifyPaymentSchema = z.object({

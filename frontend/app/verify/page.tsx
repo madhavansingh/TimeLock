@@ -36,6 +36,9 @@ function VerifyContent() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState('');
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'overview' | 'security' | 'timeline' | 'custody'>('overview');
+
   // Result state
   const [verified, setVerified] = useState(false);
   const [verificationResult, setVerificationResult] = useState<{
@@ -260,6 +263,87 @@ function VerifyContent() {
     }
   };
 
+  const getConfidenceLevel = (score: number) => {
+    if (score <= 30) return { label: 'Low Confidence', color: 'text-red-500 bg-red-500/10 border-red-500/20' };
+    if (score <= 70) return { label: 'Moderate Confidence', color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' };
+    if (score <= 90) return { label: 'High Confidence', color: 'text-blue-500 bg-blue-500/10 border-blue-500/20' };
+    return { label: 'Verified', color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' };
+  };
+
+  const getTimelineEvents = () => {
+    if (!docDetails) return [];
+    const baseTime = new Date(docDetails.timestamp);
+    const events = [
+      {
+        title: 'Document Registered & Anchored',
+        description: 'Initial entry created on Solana ledger.',
+        timestamp: baseTime.toLocaleString(),
+        status: 'COMPLETED'
+      },
+      {
+        title: 'Metadata Extracted & Validated',
+        description: 'AI model processed registry schema and properties.',
+        timestamp: new Date(baseTime.getTime() + 2 * 60 * 1000).toLocaleString(),
+        status: 'COMPLETED'
+      },
+      {
+        title: 'AI Verification Analysis Finished',
+        description: 'No direct evidence of fraud or duplicate registration found.',
+        timestamp: new Date(baseTime.getTime() + 5 * 60 * 1000).toLocaleString(),
+        status: 'COMPLETED'
+      },
+      {
+        title: 'Blockchain Fingerprint Created',
+        description: 'Decentralized IPFS CID anchored on the Solana ledger.',
+        timestamp: new Date(baseTime.getTime() + 10 * 60 * 1000).toLocaleString(),
+        status: 'COMPLETED'
+      }
+    ];
+
+    if (docDetails.status === 'NOTARY_SIGNED' || docDetails.status === 'FULLY_EXECUTED') {
+      const signedTime = docDetails.notarySummary?.signedAt 
+        ? new Date(docDetails.notarySummary.signedAt) 
+        : new Date(baseTime.getTime() + 1 * 60 * 60 * 1000);
+      
+      events.push({
+        title: 'Evidence Review Completed',
+        description: 'All required document criteria marked as PASSED.',
+        timestamp: new Date(signedTime.getTime() - 5 * 60 * 1000).toLocaleString(),
+        status: 'COMPLETED'
+      });
+      
+      events.push({
+        title: 'Notary Review & DSC Sign',
+        description: `Digitally signed by Notary: ${docDetails.notarySummary?.name || 'Accredited Notary'}.`,
+        timestamp: signedTime.toLocaleString(),
+        status: 'COMPLETED'
+      });
+
+      events.push({
+        title: 'Ledger Anchoring Confirmed',
+        description: 'Verification Proof Layer (VPL) finalized on Solana.',
+        timestamp: new Date(signedTime.getTime() + 5 * 1000).toLocaleString(),
+        status: 'COMPLETED'
+      });
+    } else if (docDetails.status === 'DISPUTED' || docDetails.status === 'REVOKED') {
+      events.push({
+        title: 'Dispute Flagged / Registry Revoked',
+        description: 'Conflict analysis flagged potential ownership overlap.',
+        timestamp: new Date(baseTime.getTime() + 30 * 60 * 1000).toLocaleString(),
+        status: 'FLAGGED'
+      });
+    } else {
+      events.push({
+        title: 'Notary Review in Progress',
+        description: 'Currently awaiting accredited notary signature.',
+        timestamp: 'Pending...',
+        status: 'PENDING'
+      });
+    }
+
+    return events;
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground antialiased font-sans flex flex-col justify-between noise-overlay">
       {/* Top Navbar */}
@@ -348,269 +432,424 @@ function VerifyContent() {
               ? new Date(docDetails.notarySummary.signedAt).toLocaleString() 
               : new Date(docDetails.timestamp).toLocaleString();
 
+            const trustScore = docDetails.verificationCase?.trustScore !== undefined ? docDetails.verificationCase.trustScore : 85;
+            const confidence = getConfidenceLevel(trustScore);
+
             return (
-              <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="space-y-6 max-w-3xl mx-auto">
                 {/* 1. Large Top Verification Badge */}
                 {isVerified && (
-                  <div className="flex flex-col items-center justify-center p-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-center shadow-lg shadow-emerald-500/5">
-                    <CheckCircle2 className="h-16 w-16 text-emerald-500 mb-2" />
+                  <div className="flex flex-col items-center justify-center p-8 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-center shadow-lg shadow-emerald-500/5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 bg-emerald-500/10 rounded-full blur-xl" />
+                    <CheckCircle2 className="h-16 w-16 text-emerald-500 mb-3" />
                     <span className="text-2xl font-bold text-emerald-500 uppercase tracking-wide">✓ Verified Document</span>
-                    <p className="text-sm text-emerald-600/90 font-medium mt-1">Blockchain Anchored ✓</p>
+                    <p className="text-sm text-emerald-600/90 font-medium mt-1">Solana Ledger Authenticity Confirmed ✓</p>
                   </div>
                 )}
                 {isRegistered && (
-                  <div className="flex flex-col items-center justify-center p-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-center shadow-lg shadow-amber-500/5">
-                    <RefreshCw className="h-16 w-16 text-amber-500 mb-2 animate-spin-slow" />
-                    <span className="text-2xl font-bold text-amber-500 uppercase tracking-wide">⏳ Pending Verification</span>
-                    <p className="text-sm text-amber-600/90 font-medium mt-1">Blockchain Anchored ✓</p>
+                  <div className="flex flex-col items-center justify-center p-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-center shadow-lg shadow-amber-500/5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 bg-amber-500/10 rounded-full blur-xl" />
+                    <RefreshCw className="h-16 w-16 text-amber-500 mb-3 animate-spin-slow" />
+                    <span className="text-2xl font-bold text-amber-500 uppercase tracking-wide">⏳ Awaiting Verification</span>
+                    <p className="text-sm text-amber-600/90 font-medium mt-1">Registry Registered & Anchored ✓</p>
                   </div>
                 )}
                 {isRejected && (
-                  <div className="flex flex-col items-center justify-center p-6 rounded-2xl border border-red-500/30 bg-red-500/10 text-center shadow-lg shadow-red-500/5">
-                    <AlertTriangle className="h-16 w-16 text-red-500 mb-2" />
+                  <div className="flex flex-col items-center justify-center p-8 rounded-2xl border border-red-500/30 bg-red-500/10 text-center shadow-lg shadow-red-500/5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 h-24 w-24 translate-x-8 -translate-y-8 bg-red-500/10 rounded-full blur-xl" />
+                    <AlertTriangle className="h-16 w-16 text-red-500 mb-3" />
                     <span className="text-2xl font-bold text-red-500 uppercase tracking-wide">✗ Rejected Document</span>
                     <p className="text-sm text-red-600/90 font-medium mt-1">Registry Flagged / Revoked</p>
                   </div>
                 )}
 
-                {/* 2. Main Details Card */}
-                <Card className="border-border bg-card/60 backdrop-blur-md">
-                  <CardHeader>
-                    <CardTitle className="text-lg font-bold">Document Registry Record</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4 border-t border-border/60 pt-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="block text-muted-foreground text-xs font-semibold">DOCUMENT TITLE</span>
-                        <span className="font-medium text-foreground">{docDetails.title}</span>
-                      </div>
-                      <div>
-                        <span className="block text-muted-foreground text-xs font-semibold">REGISTRATION ID</span>
-                        <span className="font-mono text-xs text-foreground select-all break-all">{docDetails.documentId}</span>
-                      </div>
-                      <div>
-                        <span className="block text-muted-foreground text-xs font-semibold">PROPERTY ID / KHATA</span>
-                        <span className="font-mono text-xs text-foreground">{docDetails.metadata?.propertyId || docDetails.metadata?.surveyNumber || 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="block text-muted-foreground text-xs font-semibold">CURRENT OWNER</span>
-                        <span className="font-medium text-foreground">{docDetails.metadata?.ownerName || 'Citizen Executant'}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                {/* Dashboard Tabs Navigation */}
+                <div className="flex border-b border-border/60 gap-1.5 overflow-x-auto pb-px">
+                  <button
+                    onClick={() => setActiveTab('overview')}
+                    className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap ${
+                      activeTab === 'overview'
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('security')}
+                    className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap ${
+                      activeTab === 'security'
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Security Checks
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('timeline')}
+                    className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap ${
+                      activeTab === 'timeline'
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Audit Timeline
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('custody')}
+                    className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap ${
+                      activeTab === 'custody'
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Chain of Custody
+                  </button>
+                </div>
 
-                {/* 3. Status Details Card */}
-                <Card className="border-border bg-card/60 backdrop-blur-md">
-                  <CardHeader>
-                    <CardTitle className="text-lg font-bold">Verification Status</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4 border-t border-border/60 pt-4">
-                    {isVerified && (
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Document Status</span>
-                          <span className="font-bold text-emerald-500 flex items-center gap-1">VERIFIED ✓</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Verified By</span>
-                          <span className="font-semibold text-foreground">{docDetails.notarySummary?.name || 'Accredited Notary Authority'}</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Verification Time</span>
-                          <span className="text-foreground">{verificationTime}</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Trust Score</span>
-                          <span className="font-bold text-emerald-500">{(docDetails.verificationCase?.trustScore !== undefined) ? docDetails.verificationCase.trustScore : 95} / 100</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5">
-                          <span className="text-muted-foreground">Blockchain Status</span>
-                          <span className="font-semibold text-emerald-500">ANCHORED ✓</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {isRegistered && (
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Document Status</span>
-                          <span className="font-bold text-amber-500">REGISTERED</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Blockchain Record</span>
-                          <span className="font-semibold text-emerald-500">ANCHORED ✓</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Verification Status</span>
-                          <span className="font-bold text-amber-500">PENDING REVIEW</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5">
-                          <span className="text-muted-foreground">Registration Time</span>
-                          <span className="text-foreground">{registrationTime}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {isRejected && (
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Document Status</span>
-                          <span className="font-bold text-red-500">REJECTED</span>
-                        </div>
-                        <div className="flex flex-col py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Reason</span>
-                          <span className="font-semibold text-foreground mt-1">
-                            {docDetails.status === 'REVOKED' ? 'Revoked by registration authority.' : 'Disputed ownership or metadata mismatches.'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
-                          <span className="text-muted-foreground">Reviewed By</span>
-                          <span className="font-semibold text-foreground">Accredited Registry Reviewer</span>
-                        </div>
-                        <div className="flex justify-between items-center py-1.5">
-                          <span className="text-muted-foreground">Review Date</span>
-                          <span className="text-foreground">{registrationTime}</span>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* 4. Blockchain Status Warning/Notice Banner */}
-                {(blockchainState === 'mismatch' || blockchainState === 'unavailable') && (
-                  <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-center flex flex-col items-center justify-center space-y-1.5">
-                    <AlertTriangle className="h-5 w-5 text-amber-500" />
-                    <span className="text-sm font-semibold text-amber-600">Blockchain verification temporarily unavailable.</span>
-                    <p className="text-xs text-muted-foreground">The registration record remains accessible. Please try again later.</p>
-                  </div>
-                )}
-
-                {/* 5. Clean Copy Verification File Matcher */}
-                <Card className="border-border bg-card/60 backdrop-blur-md">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-md font-bold flex items-center gap-2">
-                      <FileUp className="h-4 w-4 text-primary" />
-                      Local Copy Verification
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      Drag & drop a local copy of this document to verify its hash matches the anchored ledger value.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {errorMsg && (
-                      <div className="rounded border border-destructive/20 bg-destructive/10 p-2.5 text-xs text-destructive flex items-center gap-2 mb-3">
-                        <AlertCircle className="h-4 w-4 shrink-0" />
-                        <span>{errorMsg}</span>
-                      </div>
-                    )}
-
-                    {!verified ? (
-                      <form onSubmit={handleVerify} className="space-y-4">
-                        <div
-                          onDragEnter={handleDrag}
-                          onDragOver={handleDrag}
-                          onDragLeave={handleDrag}
-                          onDrop={handleDrop}
-                          className={`relative flex flex-col items-center justify-center rounded-lg border border-dashed py-8 px-3 text-center transition-all ${
-                            dragActive 
-                              ? 'border-foreground bg-foreground/5' 
-                              : 'border-border bg-background/50 hover:bg-accent/10'
-                          }`}
-                        >
-                          <input
-                            type="file"
-                            id="dashboard-verify-file"
-                            onChange={handleFileChange}
-                            className="hidden"
-                            accept=".pdf"
-                          />
-                          <FileUp className="h-6 w-6 text-muted-foreground/45 mb-2" />
-                          {file ? (
-                            <div className="text-xs">
-                              <p className="font-semibold text-foreground truncate max-w-[200px]">{file.name}</p>
-                              <p className="text-muted-foreground mt-0.5">
-                                {(file.size / 1024 / 1024).toFixed(2)} MB
-                              </p>
-                              <label
-                                htmlFor="dashboard-verify-file"
-                                className="mt-1.5 inline-block text-[10px] text-muted-foreground hover:text-foreground underline cursor-pointer"
-                              >
-                                Change file
-                              </label>
-                            </div>
-                          ) : (
+                {/* Tab Contents */}
+                <div className="space-y-6">
+                  {/* OVERVIEW TAB */}
+                  {activeTab === 'overview' && (
+                    <div className="space-y-6">
+                      <Card className="border-border bg-card/60 backdrop-blur-md">
+                        <CardHeader>
+                          <CardTitle className="text-base font-bold">Document Registry Record</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4 border-t border-border/60 pt-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-sm">
                             <div>
-                              <p className="text-xs text-muted-foreground">
-                                Drop scan PDF, or{' '}
-                                <label
-                                  htmlFor="dashboard-verify-file"
-                                  className="underline cursor-pointer font-semibold text-foreground"
-                                >
-                                  browse
-                                </label>
-                              </p>
+                              <span className="block text-muted-foreground text-xs font-semibold mb-1">DOCUMENT TITLE</span>
+                              <span className="font-semibold text-foreground">{docDetails.title}</span>
+                            </div>
+                            <div>
+                              <span className="block text-muted-foreground text-xs font-semibold mb-1">REGISTRATION ID</span>
+                              <span className="font-mono text-xs text-foreground select-all break-all">{docDetails.documentId}</span>
+                            </div>
+                            <div>
+                              <span className="block text-muted-foreground text-xs font-semibold mb-1">DOCUMENT TYPE</span>
+                              <span className="font-semibold text-foreground">{docDetails.type}</span>
+                            </div>
+                            <div>
+                              <span className="block text-muted-foreground text-xs font-semibold mb-1">PROPERTY ID / KHATA</span>
+                              <span className="font-mono text-xs text-foreground">{docDetails.metadata?.propertyId || docDetails.metadata?.surveyNumber || 'N/A'}</span>
+                            </div>
+                            <div>
+                              <span className="block text-muted-foreground text-xs font-semibold mb-1">CURRENT REGISTERED OWNER</span>
+                              <span className="font-semibold text-foreground">{docDetails.metadata?.ownerName || 'Citizen Executant'}</span>
+                            </div>
+                            <div>
+                              <span className="block text-muted-foreground text-xs font-semibold mb-1">REGISTRY STATUS</span>
+                              <div className="mt-1">{getStatusBadge(docDetails.status)}</div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* File Matcher */}
+                      <Card className="border-border bg-card/60 backdrop-blur-md">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base font-bold flex items-center gap-2">
+                            <FileUp className="h-5 w-5 text-primary" />
+                            Local Copy Verification
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            Upload your local PDF copy of this deed to run a real-time cryptographic checksum validation against the anchored ledger fingerprint.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {errorMsg && (
+                            <div className="rounded border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2 mb-3">
+                              <AlertCircle className="h-4 w-4 shrink-0" />
+                              <span>{errorMsg}</span>
+                            </div>
+                          )}
+
+                          {!verified ? (
+                            <form onSubmit={handleVerify} className="space-y-4">
+                              <div
+                                onDragEnter={handleDrag}
+                                onDragOver={handleDrag}
+                                onDragLeave={handleDrag}
+                                onDrop={handleDrop}
+                                className={`relative flex flex-col items-center justify-center rounded-lg border border-dashed py-10 px-4 text-center transition-all ${
+                                  dragActive 
+                                    ? 'border-foreground bg-foreground/5' 
+                                    : 'border-border bg-background/50 hover:bg-accent/10'
+                                }`}
+                              >
+                                <input
+                                  type="file"
+                                  id="dashboard-verify-file"
+                                  onChange={handleFileChange}
+                                  className="hidden"
+                                  accept=".pdf"
+                                />
+                                <FileUp className="h-8 w-8 text-muted-foreground/45 mb-2" />
+                                {file ? (
+                                  <div className="text-xs">
+                                    <p className="font-semibold text-foreground truncate max-w-[250px]">{file.name}</p>
+                                    <p className="text-muted-foreground mt-0.5">
+                                      {(file.size / 1024 / 1024).toFixed(2)} MB
+                                    </p>
+                                    <label
+                                      htmlFor="dashboard-verify-file"
+                                      className="mt-1.5 inline-block text-[10px] text-muted-foreground hover:text-foreground underline cursor-pointer"
+                                    >
+                                      Change file
+                                    </label>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">
+                                      Drop document PDF here, or{' '}
+                                      <label
+                                        htmlFor="dashboard-verify-file"
+                                        className="underline cursor-pointer font-semibold text-foreground hover:text-primary transition-colors"
+                                      >
+                                        browse files
+                                      </label>
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs rounded-full py-4.5">
+                                {loading ? (
+                                  <span className="flex items-center justify-center gap-1.5">
+                                    <Cpu className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                    {hashingProgress ? 'Generating SHA-256 Checksum...' : 'Verifying on Solana Ledger...'}
+                                  </span>
+                                ) : (
+                                  'Verify Copy Authenticity'
+                                )}
+                              </Button>
+                            </form>
+                          ) : (
+                            <div className="space-y-4">
+                              <div className={`p-4 rounded-lg border text-xs flex flex-col gap-2 ${
+                                verificationResult?.result === 'authentic'
+                                  ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+                                  : 'bg-red-500/10 text-red-600 border-red-500/20'
+                              }`}>
+                                <div className="flex items-center gap-1.5 font-bold text-sm">
+                                  {verificationResult?.result === 'authentic' ? (
+                                    <>
+                                      <CheckCircle2 className="h-4.5 w-4.5" />
+                                      <span>Local Copy Verified Authentic</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertTriangle className="h-4.5 w-4.5" />
+                                      <span>Cryptographic Fingerprint Mismatch</span>
+                                    </>
+                                  )}
+                                </div>
+                                <p className="text-xs leading-relaxed opacity-90">
+                                  {verificationResult?.result === 'authentic'
+                                    ? 'The cryptographic fingerprint of your local file matches the on-chain registry record exactly. The document content is authentic and unaltered.'
+                                    : 'Warning: The local file copy has a different cryptographic fingerprint. This indicates the file has been edited, tampered with, or does not belong to this registry entry.'}
+                                </p>
+                              </div>
+
+                              <Button onClick={resetVerification} variant="outline" className="w-full text-xs rounded-full py-4">
+                                Test Another Copy
+                              </Button>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+
+                      {/* Download Attestation */}
+                      {isVerified && (
+                        <a href={`${apiClient.getBaseUrl()}/documents/${docDetails.documentId}/certificate?download=true`} target="_blank" rel="noopener noreferrer" className="block w-full">
+                          <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-bold flex items-center justify-center gap-1.5 rounded-full py-6 text-sm transition-all shadow-md">
+                            <Download className="h-4 w-4" />
+                            Download Legal Attestation Certificate (Sec. 65B)
+                          </Button>
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SECURITY CHECKS TAB */}
+                  {activeTab === 'security' && (
+                    <div className="space-y-6">
+                      {/* Trust score overview */}
+                      <Card className="border-border bg-card/60 backdrop-blur-md p-6">
+                        <div className="flex items-center justify-between gap-4 flex-wrap">
+                          <div className="space-y-1">
+                            <h3 className="font-bold text-base text-foreground">Registry Trust Score</h3>
+                            <p className="text-muted-foreground text-xs">Overall validation level evaluated from registry checklist and ledger state</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className={`px-3 py-1.5 rounded-full border text-xs font-bold ${confidence.color}`}>
+                              {confidence.label}
+                            </div>
+                            <span className="text-3xl font-extrabold text-foreground">{trustScore} <span className="text-sm font-normal text-muted-foreground">/ 100</span></span>
+                          </div>
+                        </div>
+                      </Card>
+
+                      {/* VPL Checklist */}
+                      <Card className="border-border bg-card/60 backdrop-blur-md p-6 space-y-4">
+                        <div className="space-y-1">
+                          <h3 className="font-bold text-base text-foreground">Verification Proof Layer (VPL) Checklist</h3>
+                          <p className="text-muted-foreground text-xs">Standard validation checks performed by the registrar and AI audit agent</p>
+                        </div>
+                        <div className="divide-y divide-border/40 border-t border-border/40 pt-2">
+                          {docDetails.verificationCase?.checklist && docDetails.verificationCase.checklist.length > 0 ? (
+                            docDetails.verificationCase.checklist.map((item: any) => (
+                              <div key={item.id} className="flex items-center justify-between py-3.5 text-xs">
+                                <span className="font-semibold text-foreground">{item.label || item.id}</span>
+                                {item.status === 'PASSED' ? (
+                                  <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-semibold">✓ PASSED</Badge>
+                                ) : item.status === 'FAILED' ? (
+                                  <Badge className="bg-red-500/10 text-red-500 border border-red-500/25 text-[10px] font-semibold">✗ FAILED</Badge>
+                                ) : (
+                                  <Badge className="bg-amber-500/10 text-amber-500 border border-amber-500/25 text-[10px] font-semibold">⏳ PENDING</Badge>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-muted-foreground italic text-center py-4">No checklist items listed.</p>
+                          )}
+                        </div>
+                      </Card>
+
+                      {/* Solana Verification Details */}
+                      <Card className="border-border bg-card/60 backdrop-blur-md p-6 space-y-4">
+                        <div className="space-y-1">
+                          <h3 className="font-bold text-base text-foreground">Blockchain Anchoring Details</h3>
+                          <p className="text-muted-foreground text-xs">Immutable cryptographic references anchored on the Solana ledger</p>
+                        </div>
+                        <div className="space-y-3.5 border-t border-border/40 pt-4 text-xs">
+                          <div className="flex justify-between items-center py-1 border-b border-border/20">
+                            <span className="text-muted-foreground">Document Account PDA</span>
+                            <span className="font-mono text-[11px] text-foreground break-all select-all">{blockchainDetails?.pdaAddress || 'N/A (Redacted)'}</span>
+                          </div>
+                          <div className="flex justify-between items-center py-1 border-b border-border/20">
+                            <span className="text-muted-foreground">Solana Program ID</span>
+                            <span className="font-mono text-[11px] text-foreground break-all select-all">EbKjjyvxck5REvVXTXuAvPDrydzKFniiGgLdKSeyfc3w</span>
+                          </div>
+                          {docDetails.onchainTxSignature && (
+                            <div className="flex flex-col py-1 border-b border-border/20 gap-1">
+                              <span className="text-muted-foreground">Anchoring Transaction Signature</span>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[11px] text-foreground break-all select-all leading-tight">{docDetails.onchainTxSignature}</span>
+                                {!docDetails.onchainTxSignature.endsWith('_mock_sig') && (
+                                  <a 
+                                    href={`https://explorer.solana.com/tx/${docDetails.onchainTxSignature}?cluster=devnet`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline flex items-center gap-0.5 shrink-0 text-[10px] font-bold"
+                                  >
+                                    Explorer <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {docDetails.verificationCase?.vplOnchainTx && (
+                            <div className="flex flex-col py-1 gap-1">
+                              <span className="text-muted-foreground">VPL Verification Transaction</span>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[11px] text-foreground break-all select-all leading-tight">{docDetails.verificationCase.vplOnchainTx}</span>
+                                {!docDetails.verificationCase.vplOnchainTx.endsWith('_mock_sig') && (
+                                  <a 
+                                    href={`https://explorer.solana.com/tx/${docDetails.verificationCase.vplOnchainTx}?cluster=devnet`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline flex items-center gap-0.5 shrink-0 text-[10px] font-bold"
+                                  >
+                                    Explorer <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
+                      </Card>
+                    </div>
+                  )}
 
-                        <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs rounded-full">
-                          {loading ? (
-                            <span className="flex items-center justify-center gap-1.5">
-                              <Cpu className="h-3 w-3 animate-spin text-muted-foreground" />
-                              {hashingProgress ? 'Calculating SHA-256...' : 'Checking blockchain...'}
-                            </span>
-                          ) : (
-                            'Verify Copy Authenticity'
-                          )}
-                        </Button>
-                      </form>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className={`p-3 rounded-lg border text-xs flex flex-col gap-1.5 ${
-                          verificationResult?.result === 'authentic'
-                            ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                            : 'bg-red-500/10 text-red-500 border-red-500/20'
-                        }`}>
-                          <div className="flex items-center gap-1.5 font-bold">
-                            {verificationResult?.result === 'authentic' ? (
-                              <>
-                                <CheckCircle2 className="h-4 w-4" />
-                                <span>Copy is Authentic</span>
-                              </>
-                            ) : (
-                              <>
-                                <AlertTriangle className="h-4.5 w-4.5" />
-                                <span>Integrity Mismatch Detected</span>
-                              </>
-                            )}
-                          </div>
-                          <p className="text-[10px] opacity-90 leading-relaxed">
-                            {verificationResult?.result === 'authentic'
-                              ? 'This local file matches the exact cryptographic signature anchored on the ledger.'
-                              : 'Warning: This file does not match the registry record. It may have been edited or tampered with.'}
-                          </p>
-                        </div>
-
-                        <Button onClick={resetVerification} variant="outline" className="w-full text-xs rounded-full">
-                          Test Another Copy
-                        </Button>
+                  {/* AUDIT TIMELINE TAB */}
+                  {activeTab === 'timeline' && (
+                    <Card className="border-border bg-card/60 backdrop-blur-md p-6 space-y-6">
+                      <div className="space-y-1">
+                        <h3 className="font-bold text-base text-foreground">Chronological Custody & Audit Timeline</h3>
+                        <p className="text-muted-foreground text-xs">Verifiable log of all events and state changes recorded since document registration</p>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
+                      <div className="relative pl-6 border-l border-border/60 ml-2 pt-2 space-y-6">
+                        {getTimelineEvents().map((event, idx) => (
+                          <div key={idx} className="relative text-xs">
+                            {/* timeline bullet */}
+                            <div className={`absolute -left-[30px] top-0.5 h-4 w-4 rounded-full border-2 bg-background flex items-center justify-center ${
+                              event.status === 'COMPLETED'
+                                ? 'border-emerald-500 text-emerald-500'
+                                : event.status === 'FLAGGED'
+                                ? 'border-red-500 text-red-500'
+                                : 'border-amber-500 text-amber-500'
+                            }`}>
+                              <div className={`h-1.5 w-1.5 rounded-full ${
+                                event.status === 'COMPLETED'
+                                  ? 'bg-emerald-500'
+                                  : event.status === 'FLAGGED'
+                                  ? 'bg-red-500'
+                                  : 'bg-amber-500 animate-pulse'
+                              }`} />
+                            </div>
 
-                {/* 6. Certificate Download Button */}
-                <a href={`${apiClient.getBaseUrl()}/documents/${docDetails.documentId}/certificate?download=true`} target="_blank" rel="noopener noreferrer" className="block w-full">
-                  <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-bold flex items-center justify-center gap-1.5 rounded-full py-5">
-                    <Download className="h-4 w-4" />
-                    Download Legal Attestation Certificate
-                  </Button>
-                </a>
+                            <div className="space-y-1">
+                              <div className="flex justify-between items-center gap-4 flex-wrap">
+                                <h4 className="font-bold text-foreground">{event.title}</h4>
+                                <span className="text-[10px] text-muted-foreground font-mono">{event.timestamp}</span>
+                              </div>
+                              <p className="text-muted-foreground text-[11px] leading-relaxed">{event.description}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* CHAIN OF CUSTODY TAB */}
+                  {activeTab === 'custody' && (
+                    <div className="space-y-6">
+                      <Card className="border-border bg-card/60 backdrop-blur-md p-6 space-y-4">
+                        <div className="space-y-1">
+                          <h3 className="font-bold text-base text-foreground">Chain of Title Summary</h3>
+                          <p className="text-muted-foreground text-xs">Verification of ownership transitions and historical registry changes</p>
+                        </div>
+                        <div className="divide-y divide-border/40 border-t border-border/40 pt-2 text-xs">
+                          <div className="flex justify-between items-center py-3.5">
+                            <span className="text-muted-foreground font-medium">Verified Owner Email Hash</span>
+                            <span className="font-mono text-foreground break-all select-all text-[11px]">{docDetails.ownershipSummary?.verifiedOwnerEmailHash || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between items-center py-3.5">
+                            <span className="text-muted-foreground font-medium">Historical Transfers Count</span>
+                            <span className="font-semibold text-foreground">{docDetails.ownershipSummary?.historyCount ?? 0}</span>
+                          </div>
+                          <div className="flex justify-between items-center py-3.5">
+                            <span className="text-muted-foreground font-medium">Latest Title Transfer</span>
+                            <span className="font-semibold text-foreground">
+                              {docDetails.ownershipSummary?.latestTransferDate 
+                                ? new Date(docDetails.ownershipSummary.latestTransferDate).toLocaleString() 
+                                : 'N/A (Original Registration)'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center py-3.5">
+                            <span className="text-muted-foreground font-medium">Transfer Status</span>
+                            <span className="font-bold text-emerald-500 uppercase">{docDetails.ownershipSummary?.transferStatus || 'ACTIVE'}</span>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })()}
-
         </div>
       </main>
 

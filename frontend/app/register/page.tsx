@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -171,8 +172,8 @@ export default function RegisterDocument() {
     setLoading(true);
     setErrorMsg('');
     try {
-      // Step 3: Backend creates Razorpay order (cost fixed at ₹99)
-      const orderRes = await apiClient.post('/payments/create-order', { amount: 99 });
+      // Step 3: Backend creates Razorpay order (cost fixed at ₹10)
+      const orderRes = await apiClient.post('/payments/create-order', { amount: 10 });
       if (!orderRes.data) {
         throw new Error(orderRes.error?.message || 'Failed to initiate payment.');
       }
@@ -217,8 +218,8 @@ export default function RegisterDocument() {
           }
         },
         prefill: {
-          name: user?.name || 'Citizen Executant',
-          email: user?.email || '',
+          name: (user as any)?.name || 'Citizen Executant',
+          email: (user as any)?.email || '',
         },
         theme: {
           color: '#3b82f6',
@@ -330,9 +331,14 @@ export default function RegisterDocument() {
       <main className="flex-1 flex items-center justify-center py-12 px-4">
         <div className="w-full max-w-xl">
           {errorMsg && (
-            <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3.5 text-sm text-destructive flex items-center gap-2.5">
-              <AlertCircle className="h-5 w-5 shrink-0" />
-              <span>{errorMsg}</span>
+            <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive flex items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="h-5 w-5 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+              <Badge className="bg-red-500/10 text-red-500 border border-red-500/20 shrink-0">
+                Failed
+              </Badge>
             </div>
           )}
 
@@ -587,9 +593,9 @@ export default function RegisterDocument() {
                       </div>
                     )}
 
-                    <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full">
+                    <Button type="submit" disabled={loading} className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl shadow-md transition-all">
                       <span className="flex items-center justify-center gap-1.5">
-                        Proceed to Payment (₹99)
+                        Proceed to Payment (₹10)
                         <ArrowRight className="h-4 w-4" />
                       </span>
                     </Button>
@@ -597,133 +603,184 @@ export default function RegisterDocument() {
                 </CardContent>
               </Card>
             ) : paymentStep === 'summary' ? (
-              <Card className="border-border bg-card/60 backdrop-blur-md">
-                <CardHeader>
-                  <CardTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                    <Receipt className="h-5 w-5 text-foreground" />
-                    Payment Summary
-                  </CardTitle>
-                  <CardDescription className="text-muted-foreground">
-                    Review your verification details and complete payment to initiate anchoring.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Detailed receipt */}
-                  <div className="rounded-lg bg-background/60 border border-border p-4 space-y-4 text-sm">
-                    <div className="space-y-2 border-b border-border pb-3">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Document Title:</span>
-                        <span className="font-semibold text-foreground text-right max-w-[240px] truncate">{title}</span>
+              <Card className="border-border bg-card/60 backdrop-blur-md shadow-2xl rounded-2xl overflow-hidden max-w-xl mx-auto border">
+                <CardHeader className="border-b border-border bg-muted/20 pb-5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+                        <Receipt className="h-5 w-5" />
                       </div>
-                      <div className="flex justify-between">
+                      <div>
+                        <CardTitle className="text-xl font-bold tracking-tight text-foreground">
+                          Order Summary
+                        </CardTitle>
+                        <CardDescription className="text-muted-foreground text-xs mt-0.5">
+                          Review details and complete the verification fee
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <Badge className="bg-amber-500/10 text-amber-500 border border-amber-500/20 font-semibold px-2.5 py-1">
+                      Pending
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 space-y-6">
+                  {/* Document Details Section */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      <FileText className="h-3.5 w-3.5" />
+                      <span>Document Details</span>
+                    </div>
+                    <div className="rounded-xl bg-background/40 border border-border p-4 space-y-3">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">Title:</span>
+                        <span className="font-semibold text-foreground text-right max-w-[240px] truncate" title={title}>{title}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Type:</span>
                         <span className="font-semibold text-foreground">{type}</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Assigned Notary:</span>
                         <span className="font-semibold text-foreground">{notaries.find(n => n.notaryId === notaryId)?.name || 'Loading...'}</span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Required Signatures:</span>
                         <span className="font-semibold text-foreground">{requiredSigners}</span>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Solana Anchoring Fee</span>
-                        <span>₹79.00</span>
+                  {/* Verification Fee Breakdown & Payment Summary */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      <Receipt className="h-3.5 w-3.5" />
+                      <span>Payment Summary</span>
+                    </div>
+                    <div className="rounded-xl bg-background/40 border border-border p-4 space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Verification Fee</span>
+                        <span className="font-semibold text-foreground">₹10</span>
                       </div>
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Notary Registry & VPL Case Creation</span>
-                        <span>₹20.00</span>
+                      <div className="flex justify-between text-sm items-center">
+                        <span className="text-muted-foreground flex items-center gap-1.5">
+                          Platform Processing
+                        </span>
+                        <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-[10px] py-0.5 px-1.5">Included</Badge>
                       </div>
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Platform GST (18% inclusive)</span>
-                        <span>₹0.00</span>
+                      <div className="flex justify-between text-sm items-center">
+                        <span className="text-muted-foreground flex items-center gap-1.5">
+                          Blockchain Anchoring
+                        </span>
+                        <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-[10px] py-0.5 px-1.5">Included</Badge>
                       </div>
-                      <div className="flex justify-between font-bold text-base text-foreground pt-2 border-t border-border border-dashed">
-                        <span>Amount Due</span>
-                        <span className="text-primary">₹99.00</span>
+                      <div className="flex justify-between font-bold text-base text-foreground pt-3 border-t border-border border-dashed items-baseline">
+                        <span>Total Payable</span>
+                        <span className="text-2xl font-extrabold text-primary">₹10</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
+                  {/* Security Information */}
+                  <div className="rounded-xl border border-border bg-emerald-500/5 p-4 flex gap-3 text-xs text-muted-foreground">
+                    <Lock className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="font-semibold text-foreground block">Secured Cryptographic Registry</span>
+                      <p className="leading-relaxed">
+                        Your transaction is secured with end-to-end 256-bit SSL encryption. Anchoring guarantees non-repudiation of legal document hash fingerprints on the Solana Devnet blockchain.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Button structure */}
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
                     <Button 
                       type="button" 
                       variant="outline" 
                       onClick={() => setPaymentStep('details')}
                       disabled={loading}
-                      className="w-full border-border bg-transparent text-foreground hover:bg-accent rounded-full"
+                      className="w-full sm:w-1/3 h-11 border-border bg-transparent text-foreground hover:bg-accent rounded-xl text-sm font-semibold transition-all"
                     >
-                      Back to Details
+                      Back
                     </Button>
                     <Button 
                       type="button"
                       onClick={handleInitiateRazorpay}
                       disabled={loading}
-                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full"
+                      className="w-full sm:w-2/3 h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2"
                     >
                       {loading ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-primary-foreground" />
                           Processing...
-                        </span>
+                        </>
                       ) : (
-                        <span className="flex items-center justify-center gap-1.5">
+                        <>
                           <CreditCard className="h-4 w-4" />
-                          Pay via Razorpay (Test Mode)
-                        </span>
+                          Pay ₹10 & Continue
+                        </>
                       )}
                     </Button>
                   </div>
                 </CardContent>
               </Card>
             ) : (
-              <Card className="border-border bg-card/60 backdrop-blur-md">
-                <CardHeader className="text-center pb-2">
+              <Card className="border-border bg-card/60 backdrop-blur-md shadow-2xl rounded-2xl overflow-hidden max-w-xl mx-auto border">
+                <CardHeader className="text-center border-b border-border bg-muted/20 pb-5">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary border border-primary/20 mx-auto mb-4">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                   </div>
-                  <CardTitle className="text-xl font-bold tracking-tight text-foreground flex items-center justify-center gap-2">
+                  <CardTitle className="text-xl font-bold tracking-tight text-foreground flex flex-col items-center gap-2">
                     Securing Registry
+                    <div className="flex gap-2 mt-1">
+                      <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-[10px] py-0.5 px-2.5 font-bold">
+                        Paid
+                      </Badge>
+                      <Badge className="bg-blue-500/10 text-blue-500 border border-blue-500/20 text-[10px] py-0.5 px-2.5 font-bold animate-pulse">
+                        Processing
+                      </Badge>
+                    </div>
                   </CardTitle>
-                  <CardDescription className="text-muted-foreground">
+                  <CardDescription className="text-muted-foreground text-sm mt-1">
                     {hashingProgress ? 'Calculating file SHA-256 fingerprint...' : 'Completing secure document upload and anchoring to Solana Devnet...'}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4 py-8 px-6 text-center text-sm text-muted-foreground">
-                  <p>Please do not close this window or refresh the page.</p>
-                  <p className="text-xs text-muted-foreground/60">This process involves multi-party cryptographic signature allocations and smart contract state registration.</p>
+                <CardContent className="space-y-4 py-8 px-6 text-center text-sm text-muted-foreground bg-card/40">
+                  <p className="leading-relaxed">Please do not close this window or refresh the page.</p>
+                  <p className="text-xs text-muted-foreground/60 leading-relaxed">This process involves multi-party cryptographic signature allocations and smart contract state registration.</p>
                 </CardContent>
               </Card>
             )
           ) : (
-            <Card className="border-border bg-card/60 backdrop-blur-md">
-              <CardHeader className="text-center">
+            <Card className="border-border bg-card/60 backdrop-blur-md shadow-2xl rounded-2xl overflow-hidden max-w-xl mx-auto border">
+              <CardHeader className="text-center border-b border-border bg-muted/20 pb-5">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 mx-auto mb-4">
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
-                <CardTitle className="text-2xl font-bold tracking-tight text-foreground">Anchored Successfully</CardTitle>
-                <CardDescription className="text-muted-foreground">
+                <CardTitle className="text-2xl font-bold tracking-tight text-foreground flex flex-col items-center gap-2">
+                  Anchored Successfully
+                  <Badge className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/25 text-xs font-bold py-1 px-3">
+                    Verified
+                  </Badge>
+                </CardTitle>
+                <CardDescription className="text-muted-foreground text-sm">
                   Verification proof locked on Solana Devnet PDA.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="rounded-lg bg-background/60 border border-border p-4 space-y-3.5 text-sm">
-                  <div>
-                    <span className="block text-muted-foreground text-xs">DOCUMENT REGISTRY ID:</span>
-                    <span className="font-mono text-foreground select-all">{registeredData?.documentId}</span>
+              <CardContent className="space-y-6 p-6">
+                <div className="rounded-xl bg-background/60 border border-border p-4 space-y-4 text-sm">
+                  <div className="space-y-1">
+                    <span className="block text-muted-foreground text-xs font-bold tracking-wider">DOCUMENT REGISTRY ID</span>
+                    <span className="font-mono text-foreground text-sm select-all">{registeredData?.documentId}</span>
                   </div>
-                  <div>
-                    <span className="block text-muted-foreground text-xs">SHA-256 FILE FINGERPRINT:</span>
-                    <span className="font-mono text-foreground select-all break-all">{registeredData?.hash}</span>
+                  <div className="space-y-1">
+                    <span className="block text-muted-foreground text-xs font-bold tracking-wider">SHA-256 FILE FINGERPRINT</span>
+                    <span className="font-mono text-foreground text-xs select-all break-all">{registeredData?.hash}</span>
                   </div>
-                  <div>
-                    <span className="block text-muted-foreground text-xs">SOLANA TRANSACTION SIGNATURE:</span>
+                  <div className="space-y-1">
+                    <span className="block text-muted-foreground text-xs font-bold tracking-wider">SOLANA TRANSACTION SIGNATURE</span>
                     {registeredData?.onchainTxSignature?.endsWith('_mock_sig') ? (
-                      <span className="font-mono text-muted-foreground text-xs italic">
+                      <span className="font-mono text-muted-foreground text-xs italic block mt-1">
                         {registeredData?.onchainTxSignature} (Local Sandbox Mode)
                       </span>
                     ) : (
@@ -731,7 +788,7 @@ export default function RegisterDocument() {
                         href={`https://explorer.solana.com/tx/${registeredData?.onchainTxSignature}?cluster=devnet`}
                         target="_blank"
                         rel="noreferrer"
-                        className="font-mono text-foreground underline hover:text-muted-foreground break-all"
+                        className="font-mono text-foreground underline hover:text-muted-foreground break-all block mt-1"
                       >
                         {registeredData?.onchainTxSignature}
                       </a>
@@ -740,22 +797,22 @@ export default function RegisterDocument() {
                 </div>
 
                 {registeredData?.qrCode && (
-                  <div className="flex flex-col items-center justify-center text-center p-4 rounded-lg border border-border bg-muted/20">
-                    <img src={registeredData.qrCode} alt="Verification QR Code" className="w-40 h-40 border border-border bg-white p-2 rounded" />
+                  <div className="flex flex-col items-center justify-center text-center p-4 rounded-xl border border-border bg-muted/20">
+                    <img src={registeredData.qrCode} alt="Verification QR Code" className="w-40 h-40 border border-border bg-white p-2 rounded-lg" />
                     <p className="text-xs text-muted-foreground mt-3 max-w-[280px]">
                       Download this QR code. Anyone can scan it to inspect document integrity instantly.
                     </p>
                   </div>
                 )}
               </CardContent>
-              <CardFooter className="flex flex-col sm:flex-row gap-3">
+              <CardFooter className="flex flex-col sm:flex-row gap-3 p-6 border-t border-border bg-muted/10">
                 <Link href="/dashboard" className="w-full">
-                  <Button variant="outline" className="w-full border-border bg-transparent text-foreground hover:bg-accent rounded-full">
+                  <Button variant="outline" className="w-full h-11 border-border bg-transparent text-foreground hover:bg-accent rounded-xl text-sm font-semibold transition-all">
                     Dashboard
                   </Button>
                 </Link>
                 <Link href={`/document/${registeredData?.documentId}`} className="w-full">
-                  <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full">
+                  <Button className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl text-sm transition-all shadow-md">
                     View Audit Details
                   </Button>
                 </Link>

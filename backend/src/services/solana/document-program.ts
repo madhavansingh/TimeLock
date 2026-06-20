@@ -3624,6 +3624,19 @@ export class DocumentProgramClient {
     const contentHashBuffer = Buffer.from(contentHashHex, 'hex');
 
     try {
+      const accountInfo = await this.client.connection.getAccountInfo(pda);
+      if (accountInfo) {
+        const sigs = await this.client.connection.getSignaturesForAddress(pda, { limit: 1 });
+        if (sigs.length > 0) {
+          console.log(`[LTN Client] Document PDA ${pda.toBase58()} already exists. Returning existing TX: ${sigs[0].signature}`);
+          return sigs[0].signature;
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[LTN Client] Pre-flight Document PDA existence check failed: ${e.message}`);
+    }
+
+    try {
       const discriminator = getAnchorDiscriminator('initialize_document');
       const docIdHash = crypto.createHash('sha256').update(documentId).digest();
       const requiredSignersBuffer = Buffer.from([requiredSigners]);
@@ -3679,6 +3692,19 @@ export class DocumentProgramClient {
     const { pda: sigPda } = this.deriveSignaturePDA(docPda, signerRoleByte);
 
     try {
+      const accountInfo = await this.client.connection.getAccountInfo(sigPda);
+      if (accountInfo) {
+        const sigs = await this.client.connection.getSignaturesForAddress(sigPda, { limit: 1 });
+        if (sigs.length > 0) {
+          console.log(`[LTN Client] Signature PDA ${sigPda.toBase58()} already exists. Returning existing TX: ${sigs[0].signature}`);
+          return sigs[0].signature;
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[LTN Client] Pre-flight Signature PDA existence check failed: ${e.message}`);
+    }
+
+    try {
       const discriminator = getAnchorDiscriminator('record_signature');
       const roleBuffer = Buffer.from([signerRoleByte]);
       const certRefBuffer = Buffer.from(certRefHashHex, 'hex');
@@ -3730,6 +3756,19 @@ export class DocumentProgramClient {
   public async updateStatus(documentId: string, statusByte: number): Promise<string> {
     const programPublicKey = this.getProgramId();
     const { pda } = this.deriveDocumentPDA(documentId);
+
+    try {
+      const record = await this.fetchDocumentRecord(documentId);
+      if (record && record.status === statusByte) {
+        console.log(`[LTN Client] Document ${documentId} status is already ${statusByte}. Skipping update.`);
+        const sigs = await this.client.connection.getSignaturesForAddress(pda, { limit: 1 });
+        if (sigs.length > 0) {
+          return sigs[0].signature;
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[LTN Client] Pre-flight status check failed: ${e.message}`);
+    }
 
     try {
       const discriminator = getAnchorDiscriminator('update_status');
