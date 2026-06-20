@@ -26,7 +26,7 @@ const documentTypes = [
 ];
 
 export default function RegisterDocument() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
 
   const [title, setTitle] = useState('');
@@ -190,7 +190,14 @@ export default function RegisterDocument() {
       setAnalysisStep(0);
     } catch (err: any) {
       setHashingProgress(false);
-      setErrorMsg(err.message || 'Registry creation failed. Solana devnet may be offline or lagging.');
+      if (err.status === 401 || err.message?.includes('session no longer exists') || err.message?.includes('not exist in the database')) {
+        setErrorMsg('Your session has expired or your user account was reset. Logging out...');
+        setTimeout(() => {
+          logout();
+        }, 2000);
+      } else {
+        setErrorMsg(err.message || 'Registry creation failed. Solana devnet may be offline or lagging.');
+      }
     } finally {
       setLoading(false);
     }

@@ -52,6 +52,14 @@ class ApiClient {
       const err = new Error(errorMsg) as any;
       err.code = json.error?.code || 'HTTP_ERROR';
       err.status = response.status;
+      
+      // Auto-clear stale session on 401 Unauthorized
+      if (response.status === 401 && typeof window !== 'undefined') {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
+      }
+      
       throw err;
     }
 

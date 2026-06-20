@@ -32,7 +32,16 @@ export class DocumentService {
     registrationNumber?: string,
     ownerName?: string
   ) {
-    // 0. Validate Notary
+    // 0. Validate Owner User exists
+    console.log(`[DocumentService] Attempting to create document. Owner user ID: ${userId}`);
+    const ownerExists = await prisma.user.findUnique({
+      where: { userId }
+    });
+    if (!ownerExists) {
+      throw new AppError('The authenticated owner user does not exist in the database.', 401, 'OWNER_NOT_FOUND');
+    }
+
+    // Validate Notary
     const notary = await prisma.notary.findUnique({
       where: { notaryId }
     });
