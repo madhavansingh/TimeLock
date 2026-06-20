@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/v1';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5001/v1');
 
 export interface ApiResponse<T = any> {
   data: T | null;
@@ -28,6 +28,13 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
+    if (typeof window !== 'undefined') {
+      const nvidiaApiKey = localStorage.getItem('nvidiaApiKey');
+      if (nvidiaApiKey) {
+        headers['x-nvidia-api-key'] = nvidiaApiKey;
+      }
+    }
+    
     return headers;
   }
 
@@ -51,8 +58,16 @@ class ApiClient {
     return json as T;
   }
 
+  private buildUrl(endpoint: string): string {
+    let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    if (BASE_URL.endsWith('/v1') && cleanEndpoint.startsWith('/v1/')) {
+      cleanEndpoint = cleanEndpoint.substring(3);
+    }
+    return `${BASE_URL}${cleanEndpoint}`;
+  }
+
   public async get<T = any>(endpoint: string): Promise<ApiResponse<T>> {
-    const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const url = this.buildUrl(endpoint);
     const response = await fetch(url, {
       method: 'GET',
       headers: this.getHeaders(),
@@ -61,7 +76,7 @@ class ApiClient {
   }
 
   public async post<T = any>(endpoint: string, data: any): Promise<ApiResponse<T>> {
-    const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const url = this.buildUrl(endpoint);
     const response = await fetch(url, {
       method: 'POST',
       headers: this.getHeaders(),
@@ -71,7 +86,7 @@ class ApiClient {
   }
 
   public async postFormData<T = any>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
-    const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const url = this.buildUrl(endpoint);
     const response = await fetch(url, {
       method: 'POST',
       headers: this.getHeaders(true),
@@ -81,7 +96,7 @@ class ApiClient {
   }
 
   public async put<T = any>(endpoint: string, data: any): Promise<ApiResponse<T>> {
-    const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const url = this.buildUrl(endpoint);
     const response = await fetch(url, {
       method: 'PUT',
       headers: this.getHeaders(),
@@ -91,12 +106,15 @@ class ApiClient {
   }
 
   public async delete<T = any>(endpoint: string): Promise<ApiResponse<T>> {
-    const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const url = this.buildUrl(endpoint);
     const response = await fetch(url, {
       method: 'DELETE',
       headers: this.getHeaders(),
     });
     return this.handleResponse<ApiResponse<T>>(response);
+  }
+  public getBaseUrl(): string {
+    return BASE_URL;
   }
 }
 

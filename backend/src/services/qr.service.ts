@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import jwt from 'jsonwebtoken';
+import { config } from '../config/env';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_hackathon';
 
@@ -16,9 +17,12 @@ export class QrService {
    * Generates the verification URL for a given document.
    */
   public static generateVerificationUrl(documentId: string): string {
-    const token = this.generateVerificationToken(documentId);
-    const origin = process.env.NEXT_PUBLIC_CLIENT_URL || 'http://localhost:3000';
-    return `${origin}/verify?id=${documentId}&token=${token}`;
+    const frontendUrl = config.frontendUrl;
+    if (!frontendUrl) {
+      throw new Error("FRONTEND_URL environment variable missing");
+    }
+    const verificationUrl = `${frontendUrl}/verify?id=${documentId}`;
+    return verificationUrl;
   }
 
   /**

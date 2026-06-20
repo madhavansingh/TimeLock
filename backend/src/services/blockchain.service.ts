@@ -1,7 +1,7 @@
 import { SolanaClient, DocumentProgramClient } from 'blockchain';
-
-const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
-const SOLANA_RELAYER_PRIVATE_KEY = process.env.SOLANA_RELAYER_PRIVATE_KEY || '';
+import { config } from '../config/env';
+import { BlockchainError } from '../config/errors';
+import { logger } from '../config/logger';
 
 export class BlockchainService {
   private static solanaClient: SolanaClient;
@@ -9,10 +9,45 @@ export class BlockchainService {
 
   private static getClients() {
     if (!this.solanaClient) {
-      this.solanaClient = new SolanaClient(SOLANA_RPC_URL, SOLANA_RELAYER_PRIVATE_KEY);
-      this.programClient = new DocumentProgramClient(this.solanaClient);
+      this.solanaClient = new SolanaClient({
+        rpcUrl: config.solanaRpcUrl,
+        relayerPrivateKey: config.solanaRelayerPrivateKey,
+        programId: config.solanaProgramId
+      });
+      
+      // Enforce strict production profile with zero mock failovers
+      this.programClient = new DocumentProgramClient(this.solanaClient, {
+        strictMode: true,
+        profile: 'production'
+      });
     }
     return { solanaClient: this.solanaClient, programClient: this.programClient };
+  }
+
+  /**
+   * Helper to execute program client operations with retries (exponential backoff)
+   * and throw typed BlockchainError if all attempts fail.
+   */
+  private static async executeWithRetry<T>(operationName: string, fn: () => Promise<T>): Promise<T> {
+    const maxRetries = 3;
+    let attempt = 1;
+    let delay = 500; // 500ms initial delay
+
+    while (attempt <= maxRetries) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        logger.warn(`[Solana Retry] Operation "${operationName}" Attempt ${attempt} failed: ${err.message}`);
+        if (attempt === maxRetries) {
+          logger.error(`[Solana Fatal] Operation "${operationName}" failed after ${maxRetries} attempts: ${err.message}`);
+          throw new BlockchainError(`Solana blockchain operation "${operationName}" failed: ${err.message}`, err);
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        attempt++;
+        delay *= 2; // Exponential backoff
+      }
+    }
+    throw new BlockchainError(`Solana blockchain operation "${operationName}" failed.`);
   }
 
   /**
@@ -24,13 +59,14 @@ export class BlockchainService {
     requiredSigners = 1
   ): Promise<{ signature: string; pdaAddress: string }> {
     const { programClient } = this.getClients();
-    const sig = await programClient.initializeDocument(documentId, contentHashHex, requiredSigners);
-    const { pda } = programClient.deriveDocumentPDA(documentId);
-
-    return {
-      signature: sig,
-      pdaAddress: pda.toBase58()
-    };
+    return this.executeWithRetry('registerDocument', async () => {
+      const sig = await programClient.initializeDocument(documentId, contentHashHex, requiredSigners);
+      const { pda } = programClient.deriveDocumentPDA(documentId);
+      return {
+        signature: sig,
+        pdaAddress: pda.toBase58()
+      };
+    });
   }
 
   /**
@@ -43,12 +79,14 @@ export class BlockchainService {
     certRefHashHex: string
   ): Promise<string> {
     const { programClient } = this.getClients();
-    return await programClient.recordSignature(
-      documentId,
-      signerRoleByte,
-      signerPubkeyStr,
-      certRefHashHex
-    );
+    return this.executeWithRetry('recordSignature', async () => {
+      return await programClient.recordSignature(
+        documentId,
+        signerRoleByte,
+        signerPubkeyStr,
+        certRefHashHex
+      );
+    });
   }
 
   /**
@@ -56,6 +94,95 @@ export class BlockchainService {
    */
   public static async updateStatusOnChain(documentId: string, statusByte: number): Promise<string> {
     const { programClient } = this.getClients();
-    return await programClient.updateStatus(documentId, statusByte);
+    return this.executeWithRetry('updateStatus', async () => {
+      return await programClient.updateStatus(documentId, statusByte);
+    });
+  }
+
+  /**
+   * Initiates on-chain ownership transfer.
+   */
+  public static async initiateOwnershipTransfer(
+    documentId: string,
+    previousOwner: string,
+    newOwner: string
+  ): Promise<any> {
+    const { programClient } = this.getClients();
+    return this.executeWithRetry('initiateOwnershipTransfer', async () => {
+      return await programClient.initiateOwnershipTransfer(documentId, previousOwner, newOwner);
+    });
+  }
+
+  /**
+   * Approves on-chain ownership transfer.
+   */
+  public static async approveOwnershipTransfer(
+    documentId: string,
+    transferId: string,
+    role: string,
+    signerAddress: string,
+    signatureBytes: string
+  ): Promise<any> {
+    const { programClient } = this.getClients();
+    return this.executeWithRetry('approveOwnershipTransfer', async () => {
+      return await programClient.approveOwnershipTransfer(documentId, transferId, role, signerAddress, signatureBytes);
+    });
+  }
+
+  /**
+   * Finalizes on-chain ownership transfer.
+   */
+  public static async finalizeOwnershipTransfer(
+    documentId: string,
+    transferId: string
+  ): Promise<any> {
+    const { programClient } = this.getClients();
+    return this.executeWithRetry('finalizeOwnershipTransfer', async () => {
+      return await programClient.finalizeOwnershipTransfer(documentId, transferId);
+    });
+  }
+
+  /**
+   * Registers a new authority.
+   */
+  public static async registerAuthority(
+    authorityKey: string,
+    role: 'NOTARY' | 'GOVERNMENT' | 'BANK' | 'AUDITOR' | 'OWNER' | 'BUYER',
+    details: string
+  ): Promise<void> {
+    const { programClient } = this.getClients();
+    return this.executeWithRetry('registerAuthority', async () => {
+      return await programClient.registerAuthority(authorityKey, role, details);
+    });
+  }
+
+  /**
+   * Verifies if a given public key is an active authority.
+   */
+  public static async verifyAuthority(authorityKey: string): Promise<any> {
+    const { programClient } = this.getClients();
+    return this.executeWithRetry('verifyAuthority', async () => {
+      return await programClient.verifyAuthority(authorityKey);
+    });
+  }
+
+  /**
+   * Revokes an active authority.
+   */
+  public static async revokeAuthority(authorityKey: string): Promise<void> {
+    const { programClient } = this.getClients();
+    return this.executeWithRetry('revokeAuthority', async () => {
+      return await programClient.revokeAuthority(authorityKey);
+    });
+  }
+
+  /**
+   * Gets all registered authorities.
+   */
+  public static async getAuthorities(): Promise<any[]> {
+    const { programClient } = this.getClients();
+    return this.executeWithRetry('getAuthorities', async () => {
+      return await programClient.getAuthorities();
+    });
   }
 }

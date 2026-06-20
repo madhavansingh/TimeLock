@@ -40,3 +40,22 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     });
   }
 }
+
+export function optionalAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next();
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+    (req as AuthenticatedRequest).user = decoded;
+  } catch (err) {
+    // Treat invalid or expired token as anonymous/unauthenticated
+    (req as AuthenticatedRequest).user = undefined;
+  }
+  next();
+}
+

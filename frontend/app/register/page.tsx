@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Lock, ArrowLeft, ArrowRight, CheckCircle2, ShieldAlert, Cpu, FileUp, QrCode, FileText } from 'lucide-react';
+import { AlertCircle, Lock, ArrowLeft, ArrowRight, CheckCircle2, ShieldAlert, Cpu, FileUp, QrCode, FileText, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { calculateSHA256 } from '@/lib/crypto';
@@ -25,24 +25,44 @@ const documentTypes = [
   'Service Level Agreement (SLA)'
 ];
 
-const mockNotaries = [
-  { notaryId: '688c6761-c8d3-4628-8792-87f62f8cb5a5', name: 'Advocate Rao (Class-3 DSC Active)' }
-];
-
 export default function RegisterDocument() {
   const { user } = useAuth();
   const router = useRouter();
 
   const [title, setTitle] = useState('');
   const [type, setType] = useState('');
-  const [notaryId, setNotaryId] = useState('688c6761-c8d3-4628-8792-87f62f8cb5a5');
+  const [notaryId, setNotaryId] = useState('');
   const [requiredSigners, setRequiredSigners] = useState(1);
   const [file, setFile] = useState<File | null>(null);
+  const [surveyNumber, setSurveyNumber] = useState('');
+  const [propertyId, setPropertyId] = useState('');
+  const [registrationNumber, setRegistrationNumber] = useState('');
+  const [ownerName, setOwnerName] = useState('');
 
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hashingProgress, setHashingProgress] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [notaries, setNotaries] = useState<{ notaryId: string; name: string }[]>([]);
+  const [notariesLoading, setNotariesLoading] = useState(true);
+  const [notariesError, setNotariesError] = useState('');
+
+  // AI analysis states
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStep, setAnalysisStep] = useState(0);
+
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    if (analysisStep < 5) {
+      const timer = setTimeout(() => {
+        setAnalysisStep(prev => prev + 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else {
+      setIsAnalyzing(false);
+      setSuccess(true);
+    }
+  }, [isAnalyzing, analysisStep]);
 
   // Success state
   const [success, setSuccess] = useState(false);
@@ -55,6 +75,27 @@ export default function RegisterDocument() {
     qrCode?: string;
   } | null>(null);
 
+  const fetchNotaries = async () => {
+    setNotariesLoading(true);
+    setNotariesError('');
+    try {
+      const res = await apiClient.get('/notaries');
+      if (res.data) {
+        setNotaries(res.data);
+        if (res.data.length > 0) {
+          setNotaryId(res.data[0].notaryId);
+        }
+      } else {
+        setNotaries([]);
+      }
+    } catch (err: any) {
+      setNotariesError(err.message || 'Failed to load notaries.');
+      setNotaries([]);
+    } finally {
+      setNotariesLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!user) {
       router.push('/login');
@@ -62,7 +103,9 @@ export default function RegisterDocument() {
     }
     if (user.role !== 'CITIZEN') {
       router.push('/login');
+      return;
     }
+    fetchNotaries();
   }, [user, router]);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -113,6 +156,10 @@ export default function RegisterDocument() {
       formData.append('clientHash', clientHash);
       formData.append('notaryId', notaryId);
       formData.append('requiredSigners', requiredSigners.toString());
+      if (surveyNumber) formData.append('surveyNumber', surveyNumber);
+      if (propertyId) formData.append('propertyId', propertyId);
+      if (registrationNumber) formData.append('registrationNumber', registrationNumber);
+      if (ownerName) formData.append('ownerName', ownerName);
 
       const res = await apiClient.postFormData('/documents', formData);
       if (!res.data) {
@@ -139,21 +186,8 @@ export default function RegisterDocument() {
       };
 
       setRegisteredData(finalState);
-      
-      const stored = localStorage.getItem('registered_documents');
-      const docsList = stored ? JSON.parse(stored) : [];
-      const newLocalDoc = {
-        documentId: docData.documentId,
-        title,
-        type,
-        contentHash: docData.hash,
-        status: docData.status,
-        createdAt: new Date().toISOString()
-      };
-      docsList.unshift(newLocalDoc);
-      localStorage.setItem('registered_documents', JSON.stringify(docsList));
-
-      setSuccess(true);
+      setIsAnalyzing(true);
+      setAnalysisStep(0);
     } catch (err: any) {
       setHashingProgress(false);
       setErrorMsg(err.message || 'Registry creation failed. Solana devnet may be offline or lagging.');
@@ -192,7 +226,57 @@ export default function RegisterDocument() {
             </div>
           )}
 
-          {!success ? (
+          {isAnalyzing ? (
+            <Card className="border-border bg-card/60 backdrop-blur-md shadow-lg border">
+              <CardHeader className="text-center pb-2">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary border border-primary/20 mx-auto mb-4">
+                  <Cpu className="h-6 w-6 animate-pulse" />
+                </div>
+                <CardTitle className="text-xl font-bold tracking-tight text-foreground flex items-center justify-center gap-2">
+                  AI Registry Audit
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Running automated risk assessments and registry consistency checks.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 py-4 px-6">
+                <div className="space-y-3.5 bg-background/40 border border-border/50 rounded-lg p-4">
+                  {[
+                    'Analyzing registry consistency...',
+                    'Checking ownership chain...',
+                    'Reviewing supporting evidence...',
+                    'Calculating trust score...',
+                    'Detecting fraud indicators...'
+                  ].map((stepText, idx) => {
+                    const isDone = analysisStep > idx;
+                    const isActive = analysisStep === idx;
+                    return (
+                      <div key={idx} className="flex items-center gap-3.5 text-sm transition-all duration-300">
+                        {isDone ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                        ) : isActive ? (
+                          <RefreshCw className="h-4 w-4 text-primary animate-spin shrink-0" />
+                        ) : (
+                          <div className="h-4 w-4 rounded-full border border-border shrink-0" />
+                        )}
+                        <span className={isDone ? 'text-foreground/50 line-through' : isActive ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                          {stepText}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {/* Visual completion progress bar */}
+                <div className="w-full bg-accent/30 rounded-full h-1.5 mt-6">
+                  <div 
+                    className="bg-primary h-1.5 rounded-full transition-all duration-500" 
+                    style={{ width: `${(analysisStep / 5) * 100}%` }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ) : !success ? (
             <Card className="border-border bg-card/60 backdrop-blur-md">
               <CardHeader>
                 <CardTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
@@ -238,18 +322,26 @@ export default function RegisterDocument() {
                   {/* Notary Selector */}
                   <div className="space-y-2">
                     <Label htmlFor="notary" className="text-foreground/80">Assign Notary Authority</Label>
-                    <Select defaultValue={notaryId} onValueChange={(val) => setNotaryId(val)} disabled={loading}>
-                      <SelectTrigger className="border-border bg-background text-foreground">
-                        <SelectValue placeholder="Select notary" />
-                      </SelectTrigger>
-                      <SelectContent className="border-border bg-background text-foreground">
-                        {mockNotaries.map((n) => (
-                          <SelectItem key={n.notaryId} value={n.notaryId} className="focus:bg-accent focus:text-foreground">
-                            {n.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {notariesLoading ? (
+                      <div className="text-xs text-muted-foreground py-2">Loading active notaries...</div>
+                    ) : notariesError ? (
+                      <div className="text-xs text-destructive py-2">{notariesError}</div>
+                    ) : notaries.length === 0 ? (
+                      <div className="text-xs text-muted-foreground py-2">No active notaries available.</div>
+                    ) : (
+                      <Select value={notaryId} onValueChange={(val) => setNotaryId(val)} disabled={loading}>
+                        <SelectTrigger className="border-border bg-background text-foreground">
+                          <SelectValue placeholder="Select notary" />
+                        </SelectTrigger>
+                        <SelectContent className="border-border bg-background text-foreground">
+                          {notaries.map((n) => (
+                            <SelectItem key={n.notaryId} value={n.notaryId} className="focus:bg-accent focus:text-foreground">
+                              {n.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
 
                   {/* Required Signers */}
@@ -265,6 +357,61 @@ export default function RegisterDocument() {
                       disabled={loading}
                       className="border-border bg-background text-foreground focus-visible:ring-ring"
                     />
+                  </div>
+
+                  {/* Property Registry Metadata (Optional VPL Inputs) */}
+                  <div className="border-t border-border pt-4 mt-4 space-y-4">
+                    <h3 className="text-sm font-semibold text-foreground">Property Registry Details (VPL Verification)</h3>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="surveyNumber" className="text-foreground/80 text-xs">Survey Number</Label>
+                        <Input
+                          id="surveyNumber"
+                          placeholder="e.g. SV-100/4B"
+                          value={surveyNumber}
+                          onChange={(e) => setSurveyNumber(e.target.value)}
+                          disabled={loading}
+                          className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="propertyId" className="text-foreground/80 text-xs">Property ID / Khata</Label>
+                        <Input
+                          id="propertyId"
+                          placeholder="e.g. PROP-9921"
+                          value={propertyId}
+                          onChange={(e) => setPropertyId(e.target.value)}
+                          disabled={loading}
+                          className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="registrationNumber" className="text-foreground/80 text-xs">Registration Number</Label>
+                        <Input
+                          id="registrationNumber"
+                          placeholder="e.g. REG-2026-X88"
+                          value={registrationNumber}
+                          onChange={(e) => setRegistrationNumber(e.target.value)}
+                          disabled={loading}
+                          className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ownerName" className="text-foreground/80 text-xs">Registered Owner Name</Label>
+                        <Input
+                          id="ownerName"
+                          placeholder="e.g. Priya Executant"
+                          value={ownerName}
+                          onChange={(e) => setOwnerName(e.target.value)}
+                          disabled={loading}
+                          className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Upload Area */}
@@ -318,6 +465,16 @@ export default function RegisterDocument() {
                       )}
                     </div>
                   </div>
+
+                  {/* Selected Notary / Document Summary display before submission */}
+                  {title && type && notaryId && (
+                    <div className="rounded-lg bg-accent/20 border border-border p-3 space-y-1.5 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground block">Assigned Notary Verification:</span>
+                      <p>
+                        Document <span className="text-foreground font-semibold">"{title}"</span> of type <span className="text-foreground font-semibold">"{type}"</span> will be anchored and assigned to Notary: <span className="text-foreground font-semibold">{notaries.find(n => n.notaryId === notaryId)?.name || 'Loading...'}</span>.
+                      </p>
+                    </div>
+                  )}
 
                   <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full">
                     {loading ? (

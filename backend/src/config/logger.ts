@@ -12,6 +12,8 @@
  *   logger.error('DB connection failed', { error: err.message });
  */
 
+import { getRequestId } from './context';
+
 type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
 const LEVELS: Record<LogLevel, number> = {
@@ -48,13 +50,16 @@ function shouldLog(level: LogLevel): boolean {
 function log(level: LogLevel, message: string, meta?: Record<string, unknown>): void {
   if (!shouldLog(level)) return;
 
+  const requestId = getRequestId();
+  const mergedMeta = { requestId, ...(meta || {}) };
+
   if (isProduction) {
     // Structured JSON output for log ingestion (CloudWatch, Datadog, etc.)
     const entry = {
       timestamp: formatTimestamp(),
       level,
       message,
-      ...(meta ? { meta } : {}),
+      meta: mergedMeta,
     };
     // Use the native console methods so log levels route correctly
     if (level === 'error') console.error(JSON.stringify(entry));
@@ -65,7 +70,7 @@ function log(level: LogLevel, message: string, meta?: Record<string, unknown>): 
     const colour = COLOURS[level];
     const label = `${colour}[${level.toUpperCase().padEnd(5)}]${RESET}`;
     const ts = `\x1b[90m${formatTimestamp()}${RESET}`;
-    const metaStr = meta ? ` ${JSON.stringify(meta)}` : '';
+    const metaStr = Object.keys(mergedMeta).length > 0 ? ` ${JSON.stringify(mergedMeta)}` : '';
     const line = `${ts} ${label} ${message}${metaStr}`;
 
     if (level === 'error') console.error(line);

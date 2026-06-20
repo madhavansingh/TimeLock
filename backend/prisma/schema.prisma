@@ -1,10 +1,596 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model User {
+  userId             String              @id @default(uuid()) @map("user_id")
+  role               DbUserRole
+  phoneHash          String              @map("phone_hash")
+  emailHash          String              @map("email_hash")
+  notaryId           String?             @map("notary_id")
+  notary             Notary?             @relation(fields: [notaryId], references: [notaryId], onDelete: SetNull)
+  documents          Document[]
+  verificationEvents VerificationEvent[]
+  ownershipRecords   OwnershipRecord[]
+
+  @@map("users")
+}
+
+model Document {
+  documentId         String              @id @default(uuid()) @map("document_id")
+  title              String
+  type               String
+  contentHash        String              @map("content_hash")
+  merkleRoot         String?             @map("merkle_root")
+  status             DbDocumentStatus    @default(PENDING)
+  onchainTxSignature String?             @map("onchain_tx_signature")
+  onchainPda         String?             @map("onchain_pda")
+  ownerUserId        String              @map("owner_user_id")
+  requiredSigners    Int                 @default(1) @map("required_signers")
+  signerCount        Int                 @default(0) @map("signer_count")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  assignedNotaryId   String?             @map("assigned_notary_id")
+  assignmentTimestamp DateTime?          @map("assignment_timestamp")
+
+  owner              User                @relation(fields: [ownerUserId], references: [userId], onDelete: Cascade)
+  assignedNotary     Notary?             @relation(fields: [assignedNotaryId], references: [notaryId], onDelete: SetNull)
+  signatures         Signature[]
+  verificationEvents VerificationEvent[]
+  fraudScore         FraudScore?
+  ipfsReference      IpfsReference?
+  metadata           DocumentMetadata?
+  verificationCase   VerificationCase?
+  aiAssessment       AiAssessment?
+  aiConflictAssessment AiConflictAssessment?
+  aiApprovalPrediction AiApprovalPrediction?
+  aiCrossExamination   AiCrossExamination?
+  aiDecisionRecommendation AiDecisionRecommendation?
+  transfers          OwnershipTransfer[]
+  ownershipRecords   OwnershipRecord[]
+  evidenceRecommendations EvidenceRecommendation[]
+
+  @@index([status, createdAt])
+  @@index([ownerUserId])
+  @@map("documents")
+}
+
+model Notary {
+  notaryId             String      @id @default(uuid()) @map("notary_id")
+  name                 String
+  dscCertificateSerial String      @map("dsc_certificate_serial")
+  publicKey            String      @map("public_key")
+  certStatus           String      @map("cert_status")
+  isAccredited         Boolean     @default(true) @map("is_accredited")
+
+  signatures           Signature[]
+  assignedDocuments    Document[]
+  verificationCases    VerificationCase[]
+  users                User[]
+
+  @@map("notaries")
+}
+
+model Signature {
+  signatureId    String       @id @default(uuid()) @map("signature_id")
+  documentId     String       @map("document_id")
+  notaryId       String       @map("notary_id")
+  signerRole     DbSignerRole @map("signer_role")
+  signatureBytes String       @map("signature_bytes")
+  signedAt       DateTime     @default(now()) @map("signed_at")
+
+  document       Document     @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  notary         Notary       @relation(fields: [notaryId], references: [notaryId], onDelete: Cascade)
+
+  @@map("signatures")
+}
+
+model VerificationEvent {
+  eventId      String   @id @default(uuid()) @map("event_id")
+  documentId   String   @map("document_id")
+  eventType    String   @map("event_type")
+  actorUserId  String?  @map("actor_user_id")
+  actorLabel   String   @map("actor_label")
+  onchainTxRef String?  @map("onchain_tx_ref")
+  occurredAt   DateTime @default(now()) @map("occurred_at")
+
+  actor        User?    @relation(fields: [actorUserId], references: [userId], onDelete: SetNull)
+  document     Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@index([documentId, occurredAt])
+  @@map("verification_events")
+}
+
+model FraudScore {
+  documentId String   @id @map("document_id")
+  score      Int
+  signals    Json     @map("signals")
+  computedAt DateTime @default(now()) @map("computed_at")
+
+  document   Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("fraud_scores")
+}
+
+model IpfsReference {
+  documentId   String   @id @map("document_id")
+  cid          String
+  keyReference String   @map("key_reference")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+
+  document     Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("ipfs_references")
+}
+
+model DocumentMetadata {
+  documentId         String   @id @map("document_id")
+  surveyNumber       String?  @map("survey_number")
+  propertyId         String?  @map("property_id")
+  registrationNumber String?  @map("registration_number")
+  ownerName          String?  @map("owner_name")
+  ownerIdentifier    String?  @map("owner_identifier")
+
+  document           Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("document_metadata")
+}
+
+model VerificationCase {
+  caseId         String   @id @default(uuid()) @map("case_id")
+  documentId     String   @unique @map("document_id")
+  notaryId       String   @map("notary_id")
+  status         String
+  checklist      Json
+  challenges     Json
+  trustScore     Int      @map("trust_score")
+  vplProofHash   String?  @map("vpl_proof_hash")
+  vplOnchainTx   String?  @map("vpl_onchain_tx")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  document       Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  notary         Notary   @relation(fields: [notaryId], references: [notaryId], onDelete: Cascade)
+  evidence       Evidence[]
+
+  @@map("verification_cases")
+}
+
+model Evidence {
+  evidenceId     String   @id @default(uuid()) @map("evidence_id")
+  caseId         String   @map("case_id")
+  title          String
+  ipfsCid        String   @map("ipfs_cid")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  verificationCase VerificationCase @relation(fields: [caseId], references: [caseId], onDelete: Cascade)
+
+  @@map("evidence")
+}
+
+model OwnershipTransfer {
+  transferId         String    @id @default(uuid()) @map("transfer_id")
+  documentId         String    @map("document_id")
+  previousOwnerHash  String    @map("previous_owner_hash")
+  newOwnerHash       String    @map("new_owner_hash")
+  status             String
+  blockchainTxSig    String?   @map("blockchain_tx_sig")
+  approvals          String    @default("[]")
+  transferType       String    @default("Sale") @map("transfer_type")
+  transferNotes      String?   @map("transfer_notes")
+  supportingDocs     String    @default("[]") @map("supporting_docs")
+  assignedNotaryId   String?   @map("assigned_notary_id")
+  initiatedAt        DateTime  @default(now()) @map("initiated_at")
+  finalizedAt        DateTime? @map("finalized_at")
+
+  document           Document  @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("ownership_transfers")
+}
+
+model OwnershipRecord {
+  recordId           String    @id @default(uuid()) @map("record_id")
+  documentId         String    @map("document_id")
+  ownerUserId        String    @map("owner_user_id")
+  previousOwnerId    String?   @map("previous_owner_id")
+  startDate          DateTime  @default(now()) @map("start_date")
+  endDate            DateTime? @map("end_date")
+  transferReason     String?   @map("transfer_reason")
+  status             String
+  blockchainTx       String?   @map("blockchain_tx")
+
+  document           Document  @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  owner              User      @relation(fields: [ownerUserId], references: [userId], onDelete: Cascade)
+
+  @@map("ownership_records")
+}
+
+model AiAssessment {
+  assessmentId       String   @id @default(uuid()) @map("assessment_id")
+  documentId         String   @unique @map("document_id")
+  riskScore          Int      @map("risk_score")
+  riskLevel          String   @map("risk_level")
+  riskFactors        Json     @map("risk_factors")
+  trustScore         Int      @map("trust_score")
+  trustExplanation   String   @map("trust_explanation")
+  positiveFactors    Json     @map("positive_factors")
+  negativeFactors    Json     @map("negative_factors")
+  scoreBreakdown     Json     @map("score_breakdown")
+  recommendations    Json
+  confidenceScore    Float    @map("confidence_score")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  document           Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("ai_assessments")
+}
+
+model AiAssessmentHistory {
+  historyId          String   @id @default(uuid()) @map("history_id")
+  assessmentId       String   @map("assessment_id")
+  documentId         String   @map("document_id")
+  riskScore          Int      @map("risk_score")
+  riskLevel          String   @map("risk_level")
+  riskFactors        Json     @map("risk_factors")
+  trustScore         Int      @map("trust_score")
+  trustExplanation   String   @map("trust_explanation")
+  positiveFactors    Json     @map("positive_factors")
+  negativeFactors    Json     @map("negative_factors")
+  scoreBreakdown     Json     @map("score_breakdown")
+  recommendations    Json
+  confidenceScore    Float    @map("confidence_score")
+  triggerEvent       String   @map("trigger_event")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@map("ai_assessment_histories")
+}
+
+model AiConflictAssessment {
+  id                 String   @id @default(uuid()) @map("id")
+  documentId         String   @unique @map("document_id")
+  conflictScore      Int      @map("conflict_score")
+  conflictLevel      String   @map("conflict_level")
+  findings           Json
+  recommendation     String
+  confidence         Float
+  version            Int      @default(1)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  document           Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("ai_conflict_assessments")
+}
+
+model AiConflictAssessmentHistory {
+  id                   String   @id @default(uuid()) @map("id")
+  documentId           String   @map("document_id")
+  conflictAssessmentId String   @map("conflict_assessment_id")
+  conflictScore        Int      @map("conflict_score")
+  conflictLevel        String   @map("conflict_level")
+  findings             Json
+  recommendation       String
+  confidence           Float
+  version              Int
+  triggerEvent         String   @map("trigger_event")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@map("ai_conflict_assessment_histories")
+}
+
+model AiApprovalPrediction {
+  id                   String   @id @default(uuid()) @map("id")
+  documentId           String   @unique @map("document_id")
+  approvalProbability  Float    @map("approval_probability")
+  expectedReviewDays   Int      @map("expected_review_days")
+  missingEvidenceRisk  String   @map("missing_evidence_risk")
+  blockers             Json
+  confidence           Float
+  version              Int      @default(1)
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  document             Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("ai_approval_predictions")
+}
+
+model AiApprovalPredictionHistory {
+  id                   String   @id @default(uuid()) @map("id")
+  documentId           String   @map("document_id")
+  approvalPredictionId String   @map("approval_prediction_id")
+  approvalProbability  Float    @map("approval_probability")
+  expectedReviewDays   Int      @map("expected_review_days")
+  missingEvidenceRisk  String   @map("missing_evidence_risk")
+  blockers             Json
+  confidence           Float
+  version              Int
+  triggerEvent         String   @map("trigger_event")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@map("ai_approval_prediction_histories")
+}
+
+model AiCrossExamination {
+  id                 String   @id @default(uuid()) @map("id")
+  documentId         String   @unique @map("document_id")
+  questions          Json
+  confidence         Float
+  version            Int      @default(1)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  document           Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("ai_cross_examinations")
+}
+
+model AiCrossExaminationHistory {
+  id                 String   @id @default(uuid()) @map("id")
+  documentId         String   @map("document_id")
+  crossExaminationId String   @map("cross_examination_id")
+  questions          Json
+  confidence         Float
+  version            Int
+  triggerEvent       String   @map("trigger_event")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@map("ai_cross_examination_histories")
+}
+
+model AiDecisionRecommendation {
+  id                 String   @id @default(uuid()) @map("id")
+  documentId         String   @unique @map("document_id")
+  recommendation     String
+  rationale          Json
+  confidence         Float
+  version            Int      @default(1)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  document           Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("ai_decision_recommendations")
+}
+
+model AiDecisionRecommendationHistory {
+  id                       String   @id @default(uuid()) @map("id")
+  documentId               String   @map("document_id")
+  decisionRecommendationId String   @map("decision_recommendation_id")
+  recommendation           String
+  rationale                Json
+  confidence               Float
+  version                  Int
+  triggerEvent             String   @map("trigger_event")
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  @@map("ai_decision_recommendation_histories")
+}
+
+model EvidenceRecommendation {
+  id                    String   @id @default(uuid()) @map("id")
+  documentId            String   @map("document_id")
+  recommendedDoc        String   @map("recommended_doc")
+  reason                String
+  priority              String
+  impactScore           Int      @map("impact_score")
+  expectedTrustIncrease Int      @map("expected_trust_increase")
+  requested             Boolean  @default(false)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  document              Document @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("evidence_recommendations")
+}
+
+model TrustGraphNode {
+  nodeId       String   @id @default(uuid()) @map("node_id")
+  entityType   String   @map("entity_type")
+  entityId     String   @map("entity_id")
+  label        String
+  metadata     Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  sourceEdges  TrustGraphEdge[] @relation("SourceNode")
+  targetEdges  TrustGraphEdge[] @relation("TargetNode")
+
+  @@unique([entityType, entityId])
+  @@map("trust_graph_nodes")
+}
+
+model TrustGraphNodeHistory {
+  id           String   @id @default(uuid())
+  nodeId       String   @map("node_id")
+  entityType   String   @map("entity_type")
+  entityId     String   @map("entity_id")
+  label        String
+  metadata     Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("trust_graph_node_histories")
+}
+
+model TrustGraphEdge {
+  edgeId       String   @id @default(uuid()) @map("edge_id")
+  sourceNodeId String   @map("source_node_id")
+  targetNodeId String   @map("target_node_id")
+  relationType String   @map("relation_type")
+  weight       Float
+  metadata     Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  sourceNode   TrustGraphNode @relation("SourceNode", fields: [sourceNodeId], references: [nodeId], onDelete: Cascade)
+  targetNode   TrustGraphNode @relation("TargetNode", fields: [targetNodeId], references: [nodeId], onDelete: Cascade)
+
+  @@map("trust_graph_edges")
+}
+
+model TrustGraphEdgeHistory {
+  id           String   @id @default(uuid())
+  edgeId       String   @map("edge_id")
+  sourceNodeId String   @map("source_node_id")
+  targetNodeId String   @map("target_node_id")
+  relationType String   @map("relation_type")
+  weight       Float
+  metadata     Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("trust_graph_edge_histories")
+}
+
+model NetworkAnomaly {
+  anomalyId              String   @id @default(uuid()) @map("anomaly_id")
+  title                  String
+  description            String
+  severity               String
+  confidence             Float
+  entityId               String?  @map("entity_id")
+  entityType             String?  @map("entity_type")
+  suggestedInvestigation String   @map("suggested_investigation")
+  status                 String
+  metadata               Json
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("network_anomalies")
+}
+
+model NetworkAnomalyHistory {
+  id                     String   @id @default(uuid())
+  anomalyId              String   @map("anomaly_id")
+  title                  String
+  description            String
+  severity               String
+  confidence             Float
+  entityId               String?  @map("entity_id")
+  entityType             String?  @map("entity_type")
+  suggestedInvestigation String   @map("suggested_investigation")
+  status                 String
+  metadata               Json
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  @@map("network_anomaly_histories")
+}
+
+model ChainIntegrityAssessment {
+  assessmentId    String   @id @default(uuid()) @map("assessment_id")
+  propertyId      String   @unique @map("property_id")
+  integrityScore  Float    @map("integrity_score")
+  status          String
+  missingLinks    Json     @map("missing_links")
+  gaps            Json
+  findings        Json
+  metadata        Json
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("chain_integrity_assessments")
+}
+
+model ChainIntegrityAssessmentHistory {
+  id              String   @id @default(uuid())
+  assessmentId    String   @map("assessment_id")
+  propertyId      String   @map("property_id")
+  integrityScore  Float    @map("integrity_score")
+  status          String
+  missingLinks    Json     @map("missing_links")
+  gaps            Json
+  findings        Json
+  metadata        Json
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("chain_integrity_assessment_histories")
+}
+
+model NationalTrustRating {
+  ratingId               String   @id @default(uuid()) @map("rating_id")
+  propertyId             String   @unique @map("property_id")
+  finalRating            String   @map("final_rating")
+  fraudRisk              String   @map("fraud_risk")
+  trustScore             Float    @map("trust_score")
+  conflictScore          Float    @map("conflict_score")
+  chainIntegrityScore    Float    @map("chain_integrity_score")
+  networkRiskScore       Float    @map("network_risk_score")
+  justification          String
+  trustReportHash        String   @map("trust_report_hash")
+  trustReportTxSignature String   @map("trust_report_tx_signature")
+  metadata               Json
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("national_trust_ratings")
+}
+
+model NationalTrustRatingHistory {
+  id                     String   @id @default(uuid())
+  ratingId               String   @map("rating_id")
+  propertyId             String   @map("property_id")
+  finalRating            String   @map("final_rating")
+  fraudRisk              String   @map("fraud_risk")
+  trustScore             Float    @map("trust_score")
+  conflictScore          Float    @map("conflict_score")
+  chainIntegrityScore    Float    @map("chain_integrity_score")
+  networkRiskScore       Float    @map("network_risk_score")
+  justification          String
+  trustReportHash        String   @map("trust_report_hash")
+  trustReportTxSignature String   @map("trust_report_tx_signature")
+  metadata               Json
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  @@map("national_trust_rating_histories")
+}
+
+model EntityRiskAssessment {
+  assessmentId    String   @id @default(uuid()) @map("assessment_id")
+  entityId        String   @map("entity_id")
+  entityType      String   @map("entity_type")
+  trustScore      Float    @map("trust_score")
+  riskScore       Float    @map("risk_score")
+  riskFactors     Json     @map("risk_factors")
+  metadata        Json
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([entityType, entityId])
+  @@map("entity_risk_assessments")
+}
+
+model EntityRiskAssessmentHistory {
+  id              String   @id @default(uuid())
+  assessmentId    String   @map("assessment_id")
+  entityId        String   @map("entity_id")
+  entityType      String   @map("entity_type")
+  trustScore      Float    @map("trust_score")
+  riskScore       Float    @map("risk_score")
+  riskFactors     Json     @map("risk_factors")
+  metadata        Json
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("entity_risk_assessment_histories")
+}
+
+model AuditLog {
+  logId         String   @id @default(uuid()) @map("log_id")
+  action        String
+  message       String
+  actorId       String?  @map("actor_id")
+  actorRole     String?  @map("actor_role")
+  entityType    String?  @map("entity_type")
+  entityId      String?  @map("entity_id")
+  requestId     String?  @map("request_id")
+  ipAddress     String?  @map("ip_address")
+  metadata      Json
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
 }
 
 enum DbUserRole {
@@ -18,6 +604,8 @@ enum DbUserRole {
 enum DbDocumentStatus {
   PENDING
   ONCHAIN_CONFIRMED
+  NOTARY_REVIEW_STARTED
+  READY_FOR_SIGNATURE
   NOTARY_SIGNED
   FULLY_EXECUTED
   DISPUTED
@@ -29,97 +617,4 @@ enum DbSignerRole {
   BUYER
   SELLER
   OTHER
-}
-
-model User {
-  userId             String               @id @default(uuid()) @map("user_id")
-  role               DbUserRole
-  phoneHash          String               @map("phone_hash")
-  emailHash          String               @map("email_hash")
-  documents          Document[]
-  verificationEvents VerificationEvent[]
-
-  @@map("users")
-}
-
-model Document {
-  documentId         String               @id @default(uuid()) @map("document_id")
-  title              String
-  type               String
-  contentHash        String               @map("content_hash")
-  merkleRoot         String?              @map("merkle_root")
-  status             DbDocumentStatus     @default(PENDING)
-  onchainTxSignature String?              @map("onchain_tx_signature")
-  onchainPda         String?              @map("onchain_pda")
-  ownerUserId        String               @map("owner_user_id")
-  owner              User                 @relation(fields: [ownerUserId], references: [userId])
-  requiredSigners    Int                  @default(1) @map("required_signers")
-  signerCount        Int                  @default(0) @map("signer_count")
-  createdAt          DateTime             @default(now()) @map("created_at")
-  signatures         Signature[]
-  verificationEvents VerificationEvent[]
-  fraudScore         FraudScore?
-  ipfsReference      IpfsReference?
-
-  @@index([status, createdAt])
-  @@index([ownerUserId])
-  @@map("documents")
-}
-
-model Notary {
-  notaryId             String      @id @default(uuid()) @map("notary_id")
-  name                 String
-  dscCertificateSerial String      @map("dsc_certificate_serial")
-  publicKey            String      @map("public_key") // Base64 encoding
-  certStatus           String      @map("cert_status") // e.g. 'active', 'expired', 'revoked'
-  signatures           Signature[]
-
-  @@map("notaries")
-}
-
-model Signature {
-  signatureId    String       @id @default(uuid()) @map("signature_id")
-  documentId     String       @map("document_id")
-  document       Document     @relation(fields: [documentId], references: [documentId])
-  notaryId       String       @map("notary_id")
-  notary         Notary       @relation(fields: [notaryId], references: [notaryId])
-  signerRole     DbSignerRole @map("signer_role")
-  signatureBytes String       @map("signature_bytes") // Base64 signature
-  signedAt       DateTime     @default(now()) @map("signed_at")
-
-  @@map("signatures")
-}
-
-model VerificationEvent {
-  eventId      String   @id @default(uuid()) @map("event_id")
-  documentId   String   @map("document_id")
-  eventType    String   @map("event_type")
-  document     Document @relation(fields: [documentId], references: [documentId])
-  actorUserId  String?  @map("actor_user_id")
-  actor        User?    @relation(fields: [actorUserId], references: [userId])
-  actorLabel   String   @map("actor_label") // e.g. 'anonymous_scan'
-  onchainTxRef String?  @map("onchain_tx_ref")
-  occurredAt   DateTime @default(now()) @map("occurred_at")
-
-  @@index([documentId, occurredAt])
-  @@map("verification_events")
-}
-
-model FraudScore {
-  documentId String   @id @map("document_id")
-  document   Document @relation(fields: [documentId], references: [documentId])
-  score      Int
-  signals    Json     @map("signals")
-  computedAt DateTime @default(now()) @map("computed_at")
-
-  @@map("fraud_scores")
-}
-
-model IpfsReference {
-  documentId   String   @id @map("document_id")
-  document     Document @relation(fields: [documentId], references: [documentId])
-  cid          String
-  keyReference String   @map("key_reference")
-
-  @@map("ipfs_references")
 }

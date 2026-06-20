@@ -53,20 +53,8 @@ export default function AuditorSearch() {
       const res = await apiClient.get(`/documents/search${queryParams}`);
       setResults(res.data?.items || []);
     } catch (err: any) {
-      console.warn('Backend search API failed or scoped out, using fallback cache:', err.message);
-      const stored = localStorage.getItem('registered_documents');
-      if (stored) {
-        let list = JSON.parse(stored) as SearchResult[];
-        if (statusFilter && statusFilter !== 'ALL') {
-          list = list.filter(d => d.status === statusFilter);
-        }
-        if (dateFilter) {
-          list = list.filter(d => d.createdAt.startsWith(dateFilter));
-        }
-        setResults(list);
-      } else {
-        setResults([]);
-      }
+      console.warn('Backend search API failed:', err.message);
+      setResults([]);
     } finally {
       setLoading(false);
     }
@@ -112,6 +100,10 @@ export default function AuditorSearch() {
         return <Badge className="bg-yellow-500/10 text-yellow-600 border border-yellow-500/25">Pending</Badge>;
       case 'ONCHAIN_CONFIRMED':
         return <Badge className="bg-foreground/5 text-foreground border border-foreground/20">Anchored</Badge>;
+      case 'NOTARY_REVIEW_STARTED':
+        return <Badge className="bg-blue-500/10 text-blue-600 border border-blue-500/25">Under Review</Badge>;
+      case 'READY_FOR_SIGNATURE':
+        return <Badge className="bg-purple-500/10 text-purple-600 border border-purple-500/25">Awaiting Signature</Badge>;
       case 'NOTARY_SIGNED':
         return <Badge className="bg-foreground/5 text-foreground border border-foreground/20 font-semibold">Notary Signed</Badge>;
       case 'FULLY_EXECUTED':

@@ -64,11 +64,66 @@ if (missingVars.length > 0) {
 }
 
 // ---------------------------------------------------------------------------
+// FRONTEND_URL Validation
+// ---------------------------------------------------------------------------
+const frontendUrlEnv = process.env.FRONTEND_URL || process.env.PUBLIC_APP_URL;
+const isProdEnv = process.env.NODE_ENV === 'production' || (process.env.NODE_ENV && process.env.NODE_ENV.toLowerCase().trim() === 'production');
+
+function isValidUrl(str: string): boolean {
+  try {
+    const parsed = new URL(str);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+if (!frontendUrlEnv || frontendUrlEnv.trim() === '') {
+  console.warn('⚠️  WARNING: FRONTEND_URL environment variable is missing. QR codes will fallback to a default address.');
+  if (isProdEnv) {
+    console.error('❌ FATAL: FRONTEND_URL is required and cannot be empty in production mode.');
+    process.exit(1);
+  }
+} else {
+  const trimmedUrl = frontendUrlEnv.trim();
+  const lowerUrl = trimmedUrl.toLowerCase();
+  
+  if (lowerUrl.includes('localhost') || lowerUrl.includes('127.0.0.1')) {
+    console.warn('⚠️  WARNING: FRONTEND_URL contains "localhost" or "127.0.0.1". Scanned QR codes will fail on external devices.');
+    if (isProdEnv) {
+      console.error('❌ FATAL: FRONTEND_URL cannot contain "localhost" or "127.0.0.1" in production mode.');
+      process.exit(1);
+    }
+  }
+
+  if (!isValidUrl(trimmedUrl)) {
+    console.warn('⚠️  WARNING: FRONTEND_URL is not a valid HTTP/HTTPS URL.');
+    if (isProdEnv) {
+      console.error('❌ FATAL: FRONTEND_URL must be a valid HTTP/HTTPS URL in production mode.');
+      process.exit(1);
+    }
+  }
+}
+
+if (missingVars.length > 0) {
+  console.error('╔══════════════════════════════════════════════════════╗');
+  console.error('║  FATAL: Missing required environment variables        ║');
+  console.error('╠══════════════════════════════════════════════════════╣');
+  for (const v of missingVars) {
+    console.error(`║  ✗  ${v.padEnd(49)}║`);
+  }
+  console.error('╠══════════════════════════════════════════════════════╣');
+  console.error('║  Copy .env.example → .env and fill in the values.   ║');
+  console.error('╚══════════════════════════════════════════════════════╝');
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
 // Exported typed config object — import this instead of process.env directly
 // ---------------------------------------------------------------------------
 export const config = {
   // Server
-  port: parseInt(optionalEnv('PORT', '5000'), 10),
+  port: parseInt(optionalEnv('PORT', '5001'), 10),
   nodeEnv: optionalEnv('NODE_ENV', 'development'),
   isProduction: optionalEnv('NODE_ENV', 'development') === 'production',
   isDevelopment: optionalEnv('NODE_ENV', 'development') === 'development',
@@ -83,6 +138,7 @@ export const config = {
   // Solana / Blockchain
   solanaRpcUrl: optionalEnv('SOLANA_RPC_URL', 'https://api.devnet.solana.com'),
   solanaRelayerPrivateKey: optionalEnv('SOLANA_RELAYER_PRIVATE_KEY', ''),
+  solanaProgramId: optionalEnv('SOLANA_PROGRAM_ID', 'EbKjjyvxck5REvVXTXuAvPDrydzKFniiGgLdKSeyfc3w'),
 
   // IPFS / Pinata
   pinataApiKey: optionalEnv('PINATA_API_KEY', ''),
@@ -97,8 +153,9 @@ export const config = {
   smtpPass: optionalEnv('SMTP_PASS', ''),
   smtpFrom: optionalEnv('SMTP_FROM', 'noreply@timelock.network'),
 
-  // Frontend URL (used in QR code generation)
-  clientUrl: optionalEnv('CLIENT_URL', optionalEnv('NEXT_PUBLIC_CLIENT_URL', 'http://localhost:3000')),
+  // Public App URL (used in QR code generation and verification links)
+  frontendUrl: optionalEnv('FRONTEND_URL', optionalEnv('PUBLIC_APP_URL', 'http://10.131.235.84:3000')),
+  publicAppUrl: optionalEnv('FRONTEND_URL', optionalEnv('PUBLIC_APP_URL', 'http://10.131.235.84:3000')),
 } as const;
 
 // Log non-sensitive config on startup (development only)
@@ -107,9 +164,10 @@ if (config.isDevelopment) {
   console.log(`  NODE_ENV        : ${config.nodeEnv}`);
   console.log(`  PORT            : ${config.port}`);
   console.log(`  SOLANA_RPC_URL  : ${config.solanaRpcUrl}`);
-  console.log(`  CLIENT_URL      : ${config.clientUrl}`);
+  console.log(`  FRONTEND_URL    : ${config.frontendUrl}`);
   console.log(`  PINATA_GATEWAY  : ${config.pinataGateway}`);
   console.log(`  PINATA_JWT set  : ${config.pinataJwt ? 'yes' : 'no'}`);
   console.log(`  DATABASE_URL    : ${config.databaseUrl.replace(/:[^@]+@/, ':***@')}`); // mask password
   console.log(`  JWT_SECRET set  : ${config.jwtSecret ? 'yes' : 'NO (DANGER)'}`);
 }
+

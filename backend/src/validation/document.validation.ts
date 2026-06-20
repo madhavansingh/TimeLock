@@ -7,6 +7,10 @@ export const LocalRegisterDocumentSchema = z.object({
   type: z.string().min(2).max(50),
   notaryId: uuidValidator,
   requiredSigners: z.coerce.number().int().min(1).max(10).optional(),
+  surveyNumber: z.string().optional(),
+  propertyId: z.string().optional(),
+  registrationNumber: z.string().optional(),
+  ownerName: z.string().optional(),
 });
 
 export const LocalRecordSignatureSchema = z.object({

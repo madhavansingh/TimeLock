@@ -23,10 +23,10 @@ async function start(): Promise<void> {
   }
 
   // 2. Start HTTP server
-  const server = app.listen(config.port, () => {
+  const server = app.listen(config.port, "0.0.0.0", () => {
     logger.info('╔══════════════════════════════════════════════════╗');
     logger.info('║   Legal TimeLock Network (LTN) — Backend API     ║');
-    logger.info(`║   Listening : http://localhost:${config.port}/v1`.padEnd(51) + '║');
+    logger.info(`║   Listening : http://0.0.0.0:${config.port}/v1`.padEnd(51) + '║');
     logger.info(`║   Env       : ${config.nodeEnv}`.padEnd(51) + '║');
     logger.info(`║   Started   : ${new Date().toISOString()}`.padEnd(51) + '║');
     logger.info('╚══════════════════════════════════════════════════╝');
