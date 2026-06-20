@@ -30,8 +30,29 @@ export class DocumentService {
     surveyNumber?: string,
     propertyId?: string,
     registrationNumber?: string,
-    ownerName?: string
+    ownerName?: string,
+    paymentId?: string
   ) {
+    // 0. Validate Payment if paymentId is provided
+    if (paymentId) {
+      const payment = await prisma.payment.findUnique({
+        where: { paymentId }
+      });
+
+      if (!payment) {
+        throw new AppError('Payment record not found.', 404, 'PAYMENT_NOT_FOUND');
+      }
+
+      if (payment.status !== 'SUCCESS') {
+        throw new AppError('Payment is not completed/verified.', 402, 'PAYMENT_REQUIRED');
+      }
+
+      if (payment.documentId) {
+        throw new AppError('Payment has already been associated with another document.', 400, 'PAYMENT_ALREADY_USED');
+x      }
+    }
+
+    // 0.5. Validate Notary
     // 0. Validate Owner User exists
     console.log(`[DocumentService] Attempting to create document. Owner user ID: ${userId}`);
     const ownerExists = await prisma.user.findUnique({
@@ -96,6 +117,14 @@ export class DocumentService {
         metadata: true
       }
     });
+
+    // 3.5. Link payment to the new document
+    if (paymentId) {
+      await prisma.payment.update({
+        where: { paymentId },
+        data: { documentId: doc.documentId }
+      });
+    }
 
     // 4. Commit to Solana Cluster using Relayer HSM
     try {

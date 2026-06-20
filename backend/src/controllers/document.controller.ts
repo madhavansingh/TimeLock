@@ -37,7 +37,8 @@ export class DocumentController {
         body.surveyNumber,
         body.propertyId,
         body.registrationNumber,
-        body.ownerName
+        body.ownerName,
+        body.paymentId
       );
 
       res.status(201).json({
