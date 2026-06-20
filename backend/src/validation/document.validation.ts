@@ -11,6 +11,7 @@ export const LocalRegisterDocumentSchema = z.object({
   propertyId: z.string().optional(),
   registrationNumber: z.string().optional(),
   ownerName: z.string().optional(),
+  paymentId: z.string().uuid().optional(),
 });
 
 export const LocalRecordSignatureSchema = z.object({

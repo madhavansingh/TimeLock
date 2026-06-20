@@ -54,6 +54,7 @@ model Document {
   transfers          OwnershipTransfer[]
   ownershipRecords   OwnershipRecord[]
   evidenceRecommendations EvidenceRecommendation[]
+  payment            Payment?
 
   @@index([status, createdAt])
   @@index([ownerUserId])
@@ -600,6 +601,8 @@ enum DbUserRole {
   BANK_OFFICER
   COURT_CLERK
   ADMIN
+  JUDGE
+  ADVOCATE
 }
 
 enum DbDocumentStatus {
@@ -618,4 +621,25 @@ enum DbSignerRole {
   BUYER
   SELLER
   OTHER
+}
+
+model Payment {
+  paymentId         String        @id @default(uuid()) @map("payment_id")
+  documentId        String?       @unique @map("document_id")
+  amount            Int           // Amount in INR paise
+  status            PaymentStatus @default(PENDING)
+  razorpayOrderId   String        @map("razorpay_order_id")
+  razorpayPaymentId String?       @map("razorpay_payment_id")
+  razorpaySignature String?       @map("razorpay_signature")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  document          Document?     @relation(fields: [documentId], references: [documentId], onDelete: SetNull)
+
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }

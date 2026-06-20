@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Lock, ArrowLeft, ArrowRight, CheckCircle2, ShieldAlert, Cpu, FileUp, QrCode, FileText, RefreshCw } from 'lucide-react';
+import { AlertCircle, Lock, ArrowLeft, ArrowRight, CheckCircle2, ShieldAlert, Cpu, FileUp, QrCode, FileText, RefreshCw, CreditCard, Receipt, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { calculateSHA256 } from '@/lib/crypto';
@@ -24,6 +24,25 @@ const documentTypes = [
   'Non-Disclosure Agreement (NDA)',
   'Service Level Agreement (SLA)'
 ];
+
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') {
+      resolve(false);
+      return;
+    }
+    if ((window as any).Razorpay) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
 
 export default function RegisterDocument() {
   const { user } = useAuth();
@@ -50,6 +69,10 @@ export default function RegisterDocument() {
   // AI analysis states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState(0);
+
+  // Payment states
+  const [paymentStep, setPaymentStep] = useState<'details' | 'summary' | 'verifying'>('details');
+  const [paymentId, setPaymentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAnalyzing) return;
@@ -134,18 +157,97 @@ export default function RegisterDocument() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleProceedToPaymentSummary = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !type || !notaryId || !file) {
       setErrorMsg('Please fill out all fields and select a file to upload.');
       return;
     }
+    setErrorMsg('');
+    setPaymentStep('summary');
+  };
 
+  const handleInitiateRazorpay = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      // Step 3: Backend creates Razorpay order (cost fixed at ₹99)
+      const orderRes = await apiClient.post('/payments/create-order', { amount: 99 });
+      if (!orderRes.data) {
+        throw new Error(orderRes.error?.message || 'Failed to initiate payment.');
+      }
+
+      const { orderId, paymentId: dbPaymentId, keyId, amount, currency } = orderRes.data;
+
+      // Step 4: Razorpay Test Checkout opens
+      const isScriptLoaded = await loadRazorpayScript();
+      if (!isScriptLoaded) {
+        throw new Error('Failed to load Razorpay Checkout SDK. Please verify internet connection.');
+      }
+
+      const options = {
+        key: keyId,
+        amount: amount,
+        currency: currency || 'INR',
+        name: 'TimeLock Network',
+        description: 'Document Anchoring Verification',
+        order_id: orderId,
+        handler: async function (response: any) {
+          setLoading(true);
+          setPaymentStep('verifying');
+          try {
+            // Step 7: Backend verifies Razorpay signature
+            const verifyRes = await apiClient.post('/payments/verify', {
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+            });
+
+            if (!verifyRes.data) {
+              throw new Error(verifyRes.error?.message || 'Payment signature verification failed.');
+            }
+
+            // Step 8 & 9: Payment record verified, start document upload
+            setPaymentId(dbPaymentId);
+            await executeDocumentUpload(dbPaymentId);
+          } catch (verifyErr: any) {
+            setPaymentStep('summary');
+            setErrorMsg(verifyErr.message || 'Verification of your payment signature failed.');
+            setLoading(false);
+          }
+        },
+        prefill: {
+          name: user?.name || 'Citizen Executant',
+          email: user?.email || '',
+        },
+        theme: {
+          color: '#3b82f6',
+        },
+        modal: {
+          ondismiss: function () {
+            setLoading(false);
+          }
+        }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Payment initiation failed.');
+      setLoading(false);
+    }
+  };
+
+  const executeDocumentUpload = async (verifiedPaymentId: string) => {
     setLoading(true);
     setHashingProgress(true);
     setErrorMsg('');
 
     try {
+      if (!file) return;
+      
+      // Step 10: Existing workflow continues
+      // * SHA-256 generation
       const clientHash = await calculateSHA256(file);
       setHashingProgress(false);
 
@@ -160,6 +262,7 @@ export default function RegisterDocument() {
       if (propertyId) formData.append('propertyId', propertyId);
       if (registrationNumber) formData.append('registrationNumber', registrationNumber);
       if (ownerName) formData.append('ownerName', ownerName);
+      formData.append('paymentId', verifiedPaymentId);
 
       const res = await apiClient.postFormData('/documents', formData);
       if (!res.data) {
@@ -277,221 +380,318 @@ export default function RegisterDocument() {
               </CardContent>
             </Card>
           ) : !success ? (
-            <Card className="border-border bg-card/60 backdrop-blur-md">
-              <CardHeader>
-                <CardTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                  <FileUp className="h-5 w-5 text-foreground" />
-                  Anchor Legal Document
-                </CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  Submit metadata and secure the hash fingerprint permanently on Solana Devnet.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Title */}
-                  <div className="space-y-2">
-                    <Label htmlFor="title" className="text-foreground/80">Document Title</Label>
-                    <Input
-                      id="title"
-                      placeholder="e.g. Sale Deed - Plot 42"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      disabled={loading}
-                      className="border-border bg-background text-foreground focus-visible:ring-ring"
-                    />
-                  </div>
+            paymentStep === 'details' ? (
+              <Card className="border-border bg-card/60 backdrop-blur-md">
+                <CardHeader>
+                  <CardTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                    <FileUp className="h-5 w-5 text-foreground" />
+                    Anchor Legal Document
+                  </CardTitle>
+                  <CardDescription className="text-muted-foreground">
+                    Submit metadata and secure the hash fingerprint permanently on Solana Devnet.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleProceedToPaymentSummary} className="space-y-4">
+                    {/* Title */}
+                    <div className="space-y-2">
+                      <Label htmlFor="title" className="text-foreground/80">Document Title</Label>
+                      <Input
+                        id="title"
+                        placeholder="e.g. Sale Deed - Plot 42"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        disabled={loading}
+                        className="border-border bg-background text-foreground focus-visible:ring-ring"
+                      />
+                    </div>
 
-                  {/* Document Type */}
-                  <div className="space-y-2">
-                    <Label htmlFor="type" className="text-foreground/80">Document Type</Label>
-                    <Select onValueChange={(val) => setType(val)} disabled={loading}>
-                      <SelectTrigger className="border-border bg-background text-foreground">
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent className="border-border bg-background text-foreground">
-                        {documentTypes.map((t) => (
-                          <SelectItem key={t} value={t} className="focus:bg-accent focus:text-foreground">
-                            {t}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Notary Selector */}
-                  <div className="space-y-2">
-                    <Label htmlFor="notary" className="text-foreground/80">Assign Notary Authority</Label>
-                    {notariesLoading ? (
-                      <div className="text-xs text-muted-foreground py-2">Loading active notaries...</div>
-                    ) : notariesError ? (
-                      <div className="text-xs text-destructive py-2">{notariesError}</div>
-                    ) : notaries.length === 0 ? (
-                      <div className="text-xs text-muted-foreground py-2">No active notaries available.</div>
-                    ) : (
-                      <Select value={notaryId} onValueChange={(val) => setNotaryId(val)} disabled={loading}>
+                    {/* Document Type */}
+                    <div className="space-y-2">
+                      <Label htmlFor="type" className="text-foreground/80">Document Type</Label>
+                      <Select onValueChange={(val) => setType(val)} disabled={loading}>
                         <SelectTrigger className="border-border bg-background text-foreground">
-                          <SelectValue placeholder="Select notary" />
+                          <SelectValue placeholder="Select type" />
                         </SelectTrigger>
                         <SelectContent className="border-border bg-background text-foreground">
-                          {notaries.map((n) => (
-                            <SelectItem key={n.notaryId} value={n.notaryId} className="focus:bg-accent focus:text-foreground">
-                              {n.name}
+                          {documentTypes.map((t) => (
+                            <SelectItem key={t} value={t} className="focus:bg-accent focus:text-foreground">
+                              {t}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                    )}
-                  </div>
-
-                  {/* Required Signers */}
-                  <div className="space-y-2">
-                    <Label htmlFor="signers" className="text-foreground/80">Required Notary Signatures</Label>
-                    <Input
-                      id="signers"
-                      type="number"
-                      min={1}
-                      max={5}
-                      value={requiredSigners}
-                      onChange={(e) => setRequiredSigners(parseInt(e.target.value) || 1)}
-                      disabled={loading}
-                      className="border-border bg-background text-foreground focus-visible:ring-ring"
-                    />
-                  </div>
-
-                  {/* Property Registry Metadata (Optional VPL Inputs) */}
-                  <div className="border-t border-border pt-4 mt-4 space-y-4">
-                    <h3 className="text-sm font-semibold text-foreground">Property Registry Details (VPL Verification)</h3>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="surveyNumber" className="text-foreground/80 text-xs">Survey Number</Label>
-                        <Input
-                          id="surveyNumber"
-                          placeholder="e.g. SV-100/4B"
-                          value={surveyNumber}
-                          onChange={(e) => setSurveyNumber(e.target.value)}
-                          disabled={loading}
-                          className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="propertyId" className="text-foreground/80 text-xs">Property ID / Khata</Label>
-                        <Input
-                          id="propertyId"
-                          placeholder="e.g. PROP-9921"
-                          value={propertyId}
-                          onChange={(e) => setPropertyId(e.target.value)}
-                          disabled={loading}
-                          className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
-                        />
-                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="registrationNumber" className="text-foreground/80 text-xs">Registration Number</Label>
-                        <Input
-                          id="registrationNumber"
-                          placeholder="e.g. REG-2026-X88"
-                          value={registrationNumber}
-                          onChange={(e) => setRegistrationNumber(e.target.value)}
-                          disabled={loading}
-                          className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="ownerName" className="text-foreground/80 text-xs">Registered Owner Name</Label>
-                        <Input
-                          id="ownerName"
-                          placeholder="e.g. Priya Executant"
-                          value={ownerName}
-                          onChange={(e) => setOwnerName(e.target.value)}
-                          disabled={loading}
-                          className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Upload Area */}
-                  <div className="space-y-2">
-                    <Label className="text-foreground/80">Select Legal File</Label>
-                    <div
-                      onDragEnter={handleDrag}
-                      onDragOver={handleDrag}
-                      onDragLeave={handleDrag}
-                      onDrop={handleDrop}
-                      className={`relative flex flex-col items-center justify-center rounded-lg border border-dashed py-8 px-4 text-center transition-all ${
-                        dragActive 
-                          ? 'border-foreground bg-foreground/5' 
-                          : 'border-border bg-background/50 hover:bg-accent/10'
-                      }`}
-                    >
-                      <input
-                        type="file"
-                        id="document-upload-input"
-                        onChange={handleFileChange}
-                        className="hidden"
-                        accept=".pdf,.png,.jpg,.jpeg"
-                      />
-                      <FileText className="h-8 w-8 text-muted-foreground/45 mb-3" />
-                      {file ? (
-                        <div className="text-sm">
-                          <p className="font-semibold text-foreground">{file.name}</p>
-                          <p className="text-muted-foreground text-xs mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                          <label
-                            htmlFor="document-upload-input"
-                            className="mt-2.5 inline-block text-xs text-muted-foreground hover:text-foreground underline cursor-pointer"
-                          >
-                            Change file
-                          </label>
-                        </div>
+                    {/* Notary Selector */}
+                    <div className="space-y-2">
+                      <Label htmlFor="notary" className="text-foreground/80">Assign Notary Authority</Label>
+                      {notariesLoading ? (
+                        <div className="text-xs text-muted-foreground py-2">Loading active notaries...</div>
+                      ) : notariesError ? (
+                        <div className="text-xs text-destructive py-2">{notariesError}</div>
+                      ) : notaries.length === 0 ? (
+                        <div className="text-xs text-muted-foreground py-2">No active notaries available.</div>
                       ) : (
-                        <div>
-                          <p className="text-sm text-muted-foreground">
-                            Drag & drop contract PDF here, or
-                          </p>
-                          <label
-                            htmlFor="document-upload-input"
-                            className="mt-1 text-sm text-foreground underline cursor-pointer font-medium"
-                          >
-                            browse files
-                          </label>
-                          <p className="text-xs text-muted-foreground/60 mt-2">
-                            Only PDF, PNG, JPG accepted (Max 25MB)
-                          </p>
-                        </div>
+                        <Select value={notaryId} onValueChange={(val) => setNotaryId(val)} disabled={loading}>
+                          <SelectTrigger className="border-border bg-background text-foreground">
+                            <SelectValue placeholder="Select notary" />
+                          </SelectTrigger>
+                          <SelectContent className="border-border bg-background text-foreground">
+                            {notaries.map((n) => (
+                              <SelectItem key={n.notaryId} value={n.notaryId} className="focus:bg-accent focus:text-foreground">
+                                {n.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       )}
                     </div>
-                  </div>
 
-                  {/* Selected Notary / Document Summary display before submission */}
-                  {title && type && notaryId && (
-                    <div className="rounded-lg bg-accent/20 border border-border p-3 space-y-1.5 text-xs text-muted-foreground">
-                      <span className="font-semibold text-foreground block">Assigned Notary Verification:</span>
-                      <p>
-                        Document <span className="text-foreground font-semibold">"{title}"</span> of type <span className="text-foreground font-semibold">"{type}"</span> will be anchored and assigned to Notary: <span className="text-foreground font-semibold">{notaries.find(n => n.notaryId === notaryId)?.name || 'Loading...'}</span>.
-                      </p>
+                    {/* Required Signers */}
+                    <div className="space-y-2">
+                      <Label htmlFor="signers" className="text-foreground/80">Required Notary Signatures</Label>
+                      <Input
+                        id="signers"
+                        type="number"
+                        min={1}
+                        max={5}
+                        value={requiredSigners}
+                        onChange={(e) => setRequiredSigners(parseInt(e.target.value) || 1)}
+                        disabled={loading}
+                        className="border-border bg-background text-foreground focus-visible:ring-ring"
+                      />
                     </div>
-                  )}
 
-                  <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full">
-                    {loading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <Cpu className="h-4 w-4 animate-spin text-muted-foreground" />
-                        {hashingProgress ? 'Calculating SHA-256 fingerprint...' : 'Anchoring to Solana Devnet...'}
-                      </span>
-                    ) : (
+                    {/* Property Registry Metadata (Optional VPL Inputs) */}
+                    <div className="border-t border-border pt-4 mt-4 space-y-4">
+                      <h3 className="text-sm font-semibold text-foreground">Property Registry Details (VPL Verification)</h3>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="surveyNumber" className="text-foreground/80 text-xs">Survey Number</Label>
+                          <Input
+                            id="surveyNumber"
+                            placeholder="e.g. SV-100/4B"
+                            value={surveyNumber}
+                            onChange={(e) => setSurveyNumber(e.target.value)}
+                            disabled={loading}
+                            className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="propertyId" className="text-foreground/80 text-xs">Property ID / Khata</Label>
+                          <Input
+                            id="propertyId"
+                            placeholder="e.g. PROP-9921"
+                            value={propertyId}
+                            onChange={(e) => setPropertyId(e.target.value)}
+                            disabled={loading}
+                            className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="registrationNumber" className="text-foreground/80 text-xs">Registration Number</Label>
+                          <Input
+                            id="registrationNumber"
+                            placeholder="e.g. REG-2026-X88"
+                            value={registrationNumber}
+                            onChange={(e) => setRegistrationNumber(e.target.value)}
+                            disabled={loading}
+                            className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="ownerName" className="text-foreground/80 text-xs">Registered Owner Name</Label>
+                          <Input
+                            id="ownerName"
+                            placeholder="e.g. Priya Executant"
+                            value={ownerName}
+                            onChange={(e) => setOwnerName(e.target.value)}
+                            disabled={loading}
+                            className="border-border bg-background text-foreground text-xs focus-visible:ring-ring"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Upload Area */}
+                    <div className="space-y-2">
+                      <Label className="text-foreground/80">Select Legal File</Label>
+                      <div
+                        onDragEnter={handleDrag}
+                        onDragOver={handleDrag}
+                        onDragLeave={handleDrag}
+                        onDrop={handleDrop}
+                        className={`relative flex flex-col items-center justify-center rounded-lg border border-dashed py-8 px-4 text-center transition-all ${
+                          dragActive 
+                            ? 'border-foreground bg-foreground/5' 
+                            : 'border-border bg-background/50 hover:bg-accent/10'
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          id="document-upload-input"
+                          onChange={handleFileChange}
+                          className="hidden"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                        />
+                        <FileText className="h-8 w-8 text-muted-foreground/45 mb-3" />
+                        {file ? (
+                          <div className="text-sm">
+                            <p className="font-semibold text-foreground">{file.name}</p>
+                            <p className="text-muted-foreground text-xs mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                            <label
+                              htmlFor="document-upload-input"
+                              className="mt-2.5 inline-block text-xs text-muted-foreground hover:text-foreground underline cursor-pointer"
+                            >
+                              Change file
+                            </label>
+                          </div>
+                        ) : (
+                          <div>
+                            <p className="text-sm text-muted-foreground">
+                              Drag & drop contract PDF here, or
+                            </p>
+                            <label
+                              htmlFor="document-upload-input"
+                              className="mt-1 text-sm text-foreground underline cursor-pointer font-medium"
+                            >
+                              browse files
+                            </label>
+                            <p className="text-xs text-muted-foreground/60 mt-2">
+                              Only PDF, PNG, JPG accepted (Max 25MB)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Selected Notary / Document Summary display before submission */}
+                    {title && type && notaryId && (
+                      <div className="rounded-lg bg-accent/20 border border-border p-3 space-y-1.5 text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground block">Assigned Notary Verification:</span>
+                        <p>
+                          Document <span className="text-foreground font-semibold">"{title}"</span> of type <span className="text-foreground font-semibold">"{type}"</span> will be anchored and assigned to Notary: <span className="text-foreground font-semibold">{notaries.find(n => n.notaryId === notaryId)?.name || 'Loading...'}</span>.
+                        </p>
+                      </div>
+                    )}
+
+                    <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full">
                       <span className="flex items-center justify-center gap-1.5">
-                        Compute Hash & Anchor
+                        Proceed to Payment (₹99)
                         <ArrowRight className="h-4 w-4" />
                       </span>
-                    )}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            ) : paymentStep === 'summary' ? (
+              <Card className="border-border bg-card/60 backdrop-blur-md">
+                <CardHeader>
+                  <CardTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                    <Receipt className="h-5 w-5 text-foreground" />
+                    Payment Summary
+                  </CardTitle>
+                  <CardDescription className="text-muted-foreground">
+                    Review your verification details and complete payment to initiate anchoring.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Detailed receipt */}
+                  <div className="rounded-lg bg-background/60 border border-border p-4 space-y-4 text-sm">
+                    <div className="space-y-2 border-b border-border pb-3">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Document Title:</span>
+                        <span className="font-semibold text-foreground text-right max-w-[240px] truncate">{title}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Type:</span>
+                        <span className="font-semibold text-foreground">{type}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Assigned Notary:</span>
+                        <span className="font-semibold text-foreground">{notaries.find(n => n.notaryId === notaryId)?.name || 'Loading...'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Required Signatures:</span>
+                        <span className="font-semibold text-foreground">{requiredSigners}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Solana Anchoring Fee</span>
+                        <span>₹79.00</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Notary Registry & VPL Case Creation</span>
+                        <span>₹20.00</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Platform GST (18% inclusive)</span>
+                        <span>₹0.00</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-base text-foreground pt-2 border-t border-border border-dashed">
+                        <span>Amount Due</span>
+                        <span className="text-primary">₹99.00</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setPaymentStep('details')}
+                      disabled={loading}
+                      className="w-full border-border bg-transparent text-foreground hover:bg-accent rounded-full"
+                    >
+                      Back to Details
+                    </Button>
+                    <Button 
+                      type="button"
+                      onClick={handleInitiateRazorpay}
+                      disabled={loading}
+                      className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-full"
+                    >
+                      {loading ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          Processing...
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-1.5">
+                          <CreditCard className="h-4 w-4" />
+                          Pay via Razorpay (Test Mode)
+                        </span>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-border bg-card/60 backdrop-blur-md">
+                <CardHeader className="text-center pb-2">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary border border-primary/20 mx-auto mb-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                  <CardTitle className="text-xl font-bold tracking-tight text-foreground flex items-center justify-center gap-2">
+                    Securing Registry
+                  </CardTitle>
+                  <CardDescription className="text-muted-foreground">
+                    {hashingProgress ? 'Calculating file SHA-256 fingerprint...' : 'Completing secure document upload and anchoring to Solana Devnet...'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 py-8 px-6 text-center text-sm text-muted-foreground">
+                  <p>Please do not close this window or refresh the page.</p>
+                  <p className="text-xs text-muted-foreground/60">This process involves multi-party cryptographic signature allocations and smart contract state registration.</p>
+                </CardContent>
+              </Card>
+            )
           ) : (
             <Card className="border-border bg-card/60 backdrop-blur-md">
               <CardHeader className="text-center">

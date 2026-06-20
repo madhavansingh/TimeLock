@@ -140,6 +140,10 @@ export const config = {
   solanaRelayerPrivateKey: optionalEnv('SOLANA_RELAYER_PRIVATE_KEY', ''),
   solanaProgramId: optionalEnv('SOLANA_PROGRAM_ID', 'EbKjjyvxck5REvVXTXuAvPDrydzKFniiGgLdKSeyfc3w'),
 
+  // Razorpay
+  razorpayKeyId: optionalEnv('RAZORPAY_KEY_ID', ''),
+  razorpayKeySecret: optionalEnv('RAZORPAY_KEY_SECRET', ''),
+
   // IPFS / Pinata
   pinataApiKey: optionalEnv('PINATA_API_KEY', ''),
   pinataSecret: optionalEnv('PINATA_SECRET', ''),
