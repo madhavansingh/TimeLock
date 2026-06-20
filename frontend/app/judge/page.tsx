@@ -324,7 +324,7 @@ export default function JudgeDashboardPage() {
         requestId: err.requestId || 'error'
       });
       setInspectingResponse({ error: err.message, code: err.code });
-      alert('Demo seeding failed: ' + err.message);
+      alert('Sandbox seeding failed: ' + err.message);
     } finally {
       setExecuting(false);
     }
@@ -332,7 +332,7 @@ export default function JudgeDashboardPage() {
 
   const handleExecuteStep = async (stepNum: number) => {
     if (!users) {
-      alert('Please reset and seed the demo environment first.');
+      alert('Please reset and seed the sandbox environment first.');
       return;
     }
     setExecuting(true);
@@ -546,7 +546,7 @@ export default function JudgeDashboardPage() {
                   <div className="py-12 text-center space-y-2 bg-card/60 border border-border rounded-lg shadow-sm">
                     <Layers className="h-6 w-6 text-muted-foreground/45 mx-auto" />
                     <p className="text-xs text-muted-foreground font-semibold">No cases registered</p>
-                    <p className="text-[10px] text-muted-foreground/80 px-4">Initialize the demo database or register deeds in Citizen / Notary panels.</p>
+                    <p className="text-[10px] text-muted-foreground/80 px-4">Initialize the sandbox database or register deeds in Citizen / Notary panels.</p>
                   </div>
                 ) : (
                   cases.map((c) => {
@@ -790,7 +790,7 @@ export default function JudgeDashboardPage() {
                         </div>
                         <div className="text-xs">
                           <p className="font-bold text-foreground">Current Registered Owner</p>
-                          <p className="text-muted-foreground text-[10px]">Deed registered by seller: {selectedCase.metadata?.ownerName || 'Demo Seller'}</p>
+                          <p className="text-muted-foreground text-[10px]">Deed registered by seller: {selectedCase.metadata?.ownerName || 'Registered Seller'}</p>
                         </div>
                       </div>
 
@@ -965,9 +965,9 @@ export default function JudgeDashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center justify-end gap-2">
-                      <span className="text-muted-foreground">Demo State:</span>
+                      <span className="text-muted-foreground">Sandbox State:</span>
                       {seeded ? (
-                        <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/25">SEEDED</Badge>
+                        <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/25">INITIALIZED</Badge>
                       ) : (
                         <Badge variant="outline" className="text-muted-foreground border-border bg-transparent">UNINITIALIZED</Badge>
                       )}
@@ -975,7 +975,7 @@ export default function JudgeDashboardPage() {
                   </div>
                 </CardContent>
                 <CardFooter className="bg-muted/30 border-t border-border px-6 py-3 flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground">Initialize a clean, sandbox demo environment:</span>
+                  <span className="text-xs text-muted-foreground">Initialize a clean sandbox environment:</span>
                   <Button 
                     onClick={handleResetDemo} 
                     disabled={executing}
@@ -986,7 +986,7 @@ export default function JudgeDashboardPage() {
                     ) : (
                       <Database className="h-3.5 w-3.5 mr-1.5 text-primary" />
                     )}
-                    Seed Demo DB
+                    Initialize Sandbox DB
                   </Button>
                 </CardFooter>
               </Card>

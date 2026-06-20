@@ -178,6 +178,20 @@ export class AiAssessmentService {
           }
         });
       }
+
+      // Also create AI_ASSESSMENT_COMPLETED VerificationEvent if it does not exist yet
+      const existingEvent = await tx.verificationEvent.findFirst({
+        where: { documentId: doc.documentId, eventType: 'AI_ASSESSMENT_COMPLETED' }
+      });
+      if (!existingEvent) {
+        await tx.verificationEvent.create({
+          data: {
+            documentId: doc.documentId,
+            eventType: 'AI_ASSESSMENT_COMPLETED',
+            actorLabel: 'Nemotron AI Analyst'
+          }
+        });
+      }
     });
 
     logger.info(`[AiAssessmentService] Successfully committed assessment to database for document ${documentId}`);

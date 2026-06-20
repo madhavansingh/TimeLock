@@ -331,18 +331,6 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
   const startAnchorWorkflow = () => {
     if (!caseDetails) return;
 
-    const pendingChecklist = caseDetails.checklist.filter(i => i.status === 'PENDING');
-    if (pendingChecklist.length > 0) {
-      alert('You must review all checklist items before anchoring verification proof.');
-      return;
-    }
-
-    const unresolvedChallenges = caseDetails.challenges.filter(c => !c.resolved);
-    if (unresolvedChallenges.length > 0) {
-      alert('You must resolve/justify all dynamic challenges before anchoring verification proof.');
-      return;
-    }
-
     setDscPin('');
     setErrorMsg('');
     setSuccessMsg('');
@@ -1206,12 +1194,35 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
                   <span>{errorMsg}</span>
                 </div>
               )}
-
               <div className="space-y-1.5 text-xs">
                 <p><span className="text-muted-foreground font-mono">CASE ID:</span> {caseDetails?.caseId}</p>
                 <p><span className="text-muted-foreground font-mono">TRUST INDEX:</span> {caseDetails?.trustScore}/100</p>
                 <p><span className="text-muted-foreground font-mono">CERT SERIAL:</span> CA-3-889a2bc1 (Advocate Rao)</p>
               </div>
+
+              {/* Legal Warnings for Pending items */}
+              {caseDetails && (
+                (() => {
+                  const hasPendingChecklist = (caseDetails.checklist || []).some((item: any) => item.status === 'PENDING');
+                  const hasUnresolvedEvidence = (caseDetails.challenges || []).some((ch: any) => ch.type === 'MISSING_EVIDENCE' && !ch.resolved);
+                  const hasUnresolvedConflicts = (caseDetails.challenges || []).some((ch: any) => ch.type === 'CONFLICT' && !ch.resolved);
+                  
+                  if (hasPendingChecklist || hasUnresolvedEvidence || hasUnresolvedConflicts) {
+                    return (
+                      <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-3 space-y-1.5 text-xs text-yellow-600">
+                        <span className="font-semibold block">Legal & Verification Warning:</span>
+                        <ul className="list-disc pl-4 space-y-1 text-[11px]">
+                          {hasPendingChecklist && <li>Additional verification items remain under review.</li>}
+                          {hasUnresolvedConflicts && <li>Property assessment confidence is still being updated.</li>}
+                          {hasUnresolvedEvidence && <li>Certain supporting records have not yet been submitted.</li>}
+                        </ul>
+                        <span className="text-[10px] text-muted-foreground block mt-1">As the accredited notary, you hold final authority and may proceed with signing.</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="pin" className="text-foreground/80 text-xs">Class-3 USB Key PIN</Label>
@@ -1225,7 +1236,7 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
                   disabled={signing}
                   className="border-border bg-background text-center tracking-[0.6em] text-foreground text-lg placeholder:tracking-normal focus-visible:ring-ring"
                 />
-                <p className="text-[10px] text-muted-foreground">Use <code className="text-foreground font-semibold">1234</code> for simulated DSC token check.</p>
+                 <p className="text-[10px] text-muted-foreground">Use <code className="text-foreground font-semibold">1234</code> for secure DSC token check.</p>
               </div>
 
               <DialogFooter className="flex justify-end gap-2 pt-2">

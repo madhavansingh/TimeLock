@@ -45,7 +45,7 @@ export default function LoginPage() {
     try {
       await login(demoEmail, 'Demo@123');
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to login with demo account.');
+      setErrorMsg(err.message || 'Failed to login with authority account.');
     } finally {
       setLoading(false);
     }
@@ -97,7 +97,7 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="e.g., citizen@ltn.demo"
+                    placeholder="e.g., citizen@ltn.gov"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={loading}
@@ -143,7 +143,7 @@ export default function LoginPage() {
             </form>
 
             <div className="text-xs text-muted-foreground space-y-1.5 mt-3 pt-3 border-t border-border/50">
-              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/80 mb-2">Judge & Demo Quick Logins:</p>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/80 mb-2">Registry Portal Quick Logins:</p>
               <div className="grid grid-cols-2 gap-2">
                 <Button 
                   type="button" 

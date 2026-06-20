@@ -7,6 +7,7 @@ import { PublicKey } from '@solana/web3.js';
 import { AiAssessmentService } from './ai/ai-assessment.service';
 import { VerificationCopilotService } from './ai/verification-copilot.service';
 import { N8nService } from './n8n.service';
+import { logger } from '../config/logger';
 
 export interface ChecklistItem {
   id: string;
@@ -306,6 +307,8 @@ export class VplService {
     const challenges = c.challenges as unknown as ChallengeItem[];
     const newScore = this.computeScore(checklistItems, challenges);
 
+    logger.info(`[Checklist Transition] Document ${documentId} checklist updated: ${JSON.stringify(checklistItems)}`);
+
     const result = await prisma.verificationCase.update({
       where: { caseId: c.caseId },
       data: {
@@ -351,6 +354,8 @@ export class VplService {
     const checklist = c.checklist as unknown as ChecklistItem[];
     const newScore = this.computeScore(checklist, updatedChallenges);
 
+    logger.info(`[Challenge Transition] Document ${documentId} challenge ${challengeId} resolved with justification: ${justification}`);
+
     const result = await prisma.verificationCase.update({
       where: { caseId: c.caseId },
       data: {
@@ -386,13 +391,13 @@ export class VplService {
     // Ensure all checklist items are reviewed
     const pendingItems = checklist.filter(item => item.status === 'PENDING');
     if (pendingItems.length > 0) {
-      throw new AppError('Cannot finalize case. Some checklist items are still pending.', 400, 'CHECKLIST_PENDING');
+      logger.info(`[Notary Signing Warning] finalization allowed with pending checklist items: ${JSON.stringify(pendingItems)}`);
     }
 
     // Ensure all challenges are resolved/justified
     const unresolvedChallenges = challenges.filter(ch => !ch.resolved);
     if (unresolvedChallenges.length > 0) {
-      throw new AppError('Cannot finalize case. Some checklist challenges are unresolved.', 400, 'CHALLENGES_PENDING');
+      logger.info(`[Notary Signing Warning] finalization allowed with unresolved challenges: ${JSON.stringify(unresolvedChallenges)}`);
     }
 
     const finalScore = this.computeScore(checklist, challenges);
