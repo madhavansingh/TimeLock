@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { uuidValidator } from '../../../shared/validation';
-import { SignerRole } from '../../../shared/enums';
+import { uuidValidator } from '../shared/validation';
+import { SignerRole } from '../shared/enums';
 
 export const LocalRegisterDocumentSchema = z.object({
   title: z.string().min(3, { message: 'Title must be at least 3 characters.' }).max(100),

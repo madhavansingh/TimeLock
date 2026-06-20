@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { OtpRequestSchema } from '../../../shared/validation';
+import { OtpRequestSchema } from '../shared/validation';
 import { LoginRequestSchema, RefreshRequestSchema } from '../validation/auth.validation';
 import { AuthService } from '../services/auth.service';
 import { prisma } from '../config/db';

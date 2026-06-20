@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { identifierValidator } from '../../../shared/validation';
+import { identifierValidator } from '../shared/validation';
 
 export const LoginRequestSchema = z.object({
   identifier: identifierValidator,

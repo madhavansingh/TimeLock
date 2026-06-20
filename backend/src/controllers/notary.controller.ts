@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { NotaryOnboardSchema } from '../../../shared/validation';
+import { NotaryOnboardSchema } from '../shared/validation';
 import { prisma } from '../config/db';
 import { DbDocumentStatus } from '@prisma/client';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
