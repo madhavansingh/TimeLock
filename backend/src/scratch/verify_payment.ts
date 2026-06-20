@@ -18,12 +18,12 @@ async function run() {
     const otpRes = await otpReq.json() as any;
     console.log('   Response:', otpRes);
 
-    // 2. Verify OTP / Login
-    console.log('2. Verifying OTP via login endpoint...');
+    // 2. Verify credentials / Login
+    console.log('2. Logging in via password login endpoint...');
     const verifyReq = await fetch(`${BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier: citizenEmail, code: '123456' })
+      body: JSON.stringify({ email: citizenEmail, password: 'Demo@123' })
     });
     const verifyRes = await verifyReq.json() as any;
     if (!verifyRes.data || !verifyRes.data.accessToken) {
