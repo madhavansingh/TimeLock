@@ -2,6 +2,9 @@ import { SolanaClient, DocumentProgramClient } from './solana';
 import { config } from '../config/env';
 import { BlockchainError } from '../config/errors';
 import { logger } from '../config/logger';
+import { prisma } from '../config/db';
+import { HashService } from './hash.service';
+import { PublicKey } from '@solana/web3.js';
 
 export class BlockchainService {
   private static solanaClient: SolanaClient;
@@ -80,11 +83,27 @@ export class BlockchainService {
   ): Promise<string> {
     const { programClient } = this.getClients();
     return this.executeWithRetry('recordSignature', async () => {
+      let signerSecretKey: Uint8Array | undefined;
+      try {
+        const publicKeyBytes = new PublicKey(signerPubkeyStr).toBytes();
+        const publicKeyBase64 = Buffer.from(publicKeyBytes).toString('base64');
+        const notary = await prisma.notary.findFirst({
+          where: { publicKey: publicKeyBase64 }
+        });
+        if (notary) {
+          const naclKeypair = HashService.getNotaryKeypair(notary.notaryId);
+          signerSecretKey = naclKeypair.secretKey;
+        }
+      } catch (err) {
+        logger.warn(`[BlockchainService] Failed to derive notary keypair for ${signerPubkeyStr}: ${err}`);
+      }
+
       return await programClient.recordSignature(
         documentId,
         signerRoleByte,
         signerPubkeyStr,
-        certRefHashHex
+        certRefHashHex,
+        signerSecretKey
       );
     });
   }

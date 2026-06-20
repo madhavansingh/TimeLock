@@ -1,4 +1,4 @@
-import { PublicKey, SystemProgram, Transaction, TransactionInstruction, Signer } from '@solana/web3.js';
+import { PublicKey, SystemProgram, Transaction, TransactionInstruction, Signer, Keypair } from '@solana/web3.js';
 import { SolanaClient, BlockchainConfig } from './solana-client';
 import crypto from 'crypto';
 
@@ -3670,7 +3670,8 @@ export class DocumentProgramClient {
     documentId: string,
     signerRoleByte: number,
     signerPublicKeyStr: string,
-    certRefHashHex: string
+    certRefHashHex: string,
+    signerSecretKey?: Uint8Array
   ): Promise<string> {
     const programPublicKey = this.getProgramId();
     const { pda: docPda } = this.deriveDocumentPDA(documentId);
@@ -3702,7 +3703,12 @@ export class DocumentProgramClient {
 
       const tx = new Transaction().add(instruction);
 
-      return await this.submitTransaction(tx, [this.client.relayerKeypair], {
+      const signers = [this.client.relayerKeypair];
+      if (signerSecretKey) {
+        signers.push(Keypair.fromSecretKey(signerSecretKey));
+      }
+
+      return await this.submitTransaction(tx, signers, {
         documentId,
         contentHashHex: certRefHashHex
       });
