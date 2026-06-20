@@ -1,4 +1,6 @@
-FROM node:22.13-alpine
+FROM node:22-bookworm-slim
+
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@11.8.0
 
