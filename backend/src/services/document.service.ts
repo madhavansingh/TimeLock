@@ -49,7 +49,7 @@ export class DocumentService {
 
       if (payment.documentId) {
         throw new AppError('Payment has already been associated with another document.', 400, 'PAYMENT_ALREADY_USED');
-x      }
+      }
     }
 
     // 0.5. Validate Notary
