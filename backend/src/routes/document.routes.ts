@@ -1,14 +1,35 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { DocumentController } from '../controllers/document.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware';
 import { rbacMiddleware } from '../middleware/rbac.middleware';
+
+import { createRateLimiter } from '../middleware/rate-limiter.middleware';
 
 const router = Router();
 const upload = multer({
   limits: {
     fileSize: 25 * 1024 * 1024 // 25 MB max limit
   }
+});
+
+// Rate limiters for public endpoints
+const statusLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: 'Too many status check requests. Please try again later.'
+});
+
+const verifyScanLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: 'Too many verify requests. Please try again later.'
+});
+
+const certificateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many certificate downloads. Please try again later.'
 });
 
 // Register new document (Citizen only)
@@ -20,6 +41,14 @@ router.post(
   DocumentController.uploadDocument
 );
 
+// Fetch citizen's own documents (Citizen only)
+router.get(
+  '/',
+  authMiddleware,
+  rbacMiddleware(['CITIZEN']),
+  DocumentController.getMyDocuments
+);
+
 // Search documents (Institutional roles)
 router.get(
   '/search',
@@ -28,14 +57,22 @@ router.get(
   DocumentController.searchDocuments
 );
 
-// Fetch document details & status (Public verification endpoint)
-router.get('/:id/status', DocumentController.getStatus);
+// Fetch document details & status (Public verification endpoint with optional auth)
+router.get('/:id/status', statusLimiter, optionalAuthMiddleware, DocumentController.getStatus);
 
 // Fetch QR Code
 router.get('/:id/qr', authMiddleware, DocumentController.getQrCode);
 
-// Verify uploaded file (Public verification endpoint)
-router.post('/:id/verify', upload.single('file'), DocumentController.verifyScan);
+// Verify uploaded file (Public verification endpoint with optional auth)
+router.post('/:id/verify', verifyScanLimiter, optionalAuthMiddleware, upload.single('file'), DocumentController.verifyScan);
+
+// Start notary review
+router.post(
+  '/:id/review',
+  authMiddleware,
+  rbacMiddleware(['NOTARY']),
+  DocumentController.startReview
+);
 
 // Record signature (Notaries or Citizens)
 router.post(
@@ -45,12 +82,56 @@ router.post(
   DocumentController.recordSignature
 );
 
-// Retrieve custody trail timeline (Institutional roles)
+// Retrieve custody trail timeline (Enforced internally in controller)
 router.get(
   '/:id/custody',
   authMiddleware,
-  rbacMiddleware(['BANK_OFFICER', 'COURT_CLERK', 'ADMIN']),
   DocumentController.getCustodyTrail
+);
+
+// VPL routes
+router.post(
+  '/:id/vpl/evidence',
+  authMiddleware,
+  rbacMiddleware(['NOTARY']),
+  upload.single('file'),
+  DocumentController.uploadEvidence
+);
+
+router.post(
+  '/:id/vpl/resolve',
+  authMiddleware,
+  rbacMiddleware(['NOTARY']),
+  DocumentController.resolveChallenge
+);
+
+router.post(
+  '/:id/vpl/checklist',
+  authMiddleware,
+  rbacMiddleware(['NOTARY']),
+  DocumentController.updateChecklist
+);
+
+router.post(
+  '/:id/vpl/anchor',
+  authMiddleware,
+  rbacMiddleware(['NOTARY']),
+  DocumentController.anchorVerification
+);
+
+// Professional notary review workspace actions
+router.post(
+  '/:id/ready-for-signature',
+  authMiddleware,
+  rbacMiddleware(['NOTARY']),
+  DocumentController.approveForSignature
+);
+
+router.post(
+  '/:id/vpl/request-evidence',
+  authMiddleware,
+  rbacMiddleware(['NOTARY']),
+  DocumentController.requestAdditionalEvidence
 );
 
 // Retrieve fraud risk details (Institutional roles)
@@ -61,7 +142,11 @@ router.get(
   DocumentController.getFraudScore
 );
 
-// Download Certificate (Public)
-router.get('/:id/certificate', DocumentController.downloadCertificate);
+// Download Certificate (Public verification endpoint with optional auth)
+router.get('/:id/certificate', certificateLimiter, optionalAuthMiddleware, DocumentController.downloadCertificate);
+
+// AI Verification Insights
+router.get('/:id/ai-insights', authMiddleware, DocumentController.getAiInsights);
+router.post('/:id/ai-insights/regenerate', authMiddleware, DocumentController.regenerateAiInsights);
 
 export default router;

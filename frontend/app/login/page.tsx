@@ -35,7 +35,8 @@ export default function LoginPage() {
     try {
       await apiClient.post('/auth/otp/request', { identifier });
       setOtpSent(true);
-      setInfoMsg('OTP sent successfully! (Use "123456" for this demo)');
+      const isDev = process.env.NODE_ENV === 'development';
+      setInfoMsg(isDev ? 'OTP sent successfully! (Use "123456" for this demo)' : 'OTP sent successfully! Check your inbox.');
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to request OTP. Please verify your format.');
     } finally {

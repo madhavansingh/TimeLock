@@ -1,6 +1,9 @@
 import crypto from 'crypto';
+import nacl from 'tweetnacl';
 
 export class HashService {
+  private static readonly MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY || 'ltn_master_enc_key_2026_kleos_super_secure';
+
   /**
    * Generates SHA-256 checksum fingerprint for file buffer or string data.
    */
@@ -25,8 +28,25 @@ export class HashService {
   }
 
   /**
-   * Cryptographically verifies that a signature matches the given hash,
-   * using a base64 encoded Public Key.
+   * Derives a stable Ed25519 keypair for a notary deterministically.
+   */
+  public static getNotaryKeypair(notaryId: string) {
+    const seed = crypto.createHash('sha256').update(notaryId + this.MASTER_KEY).digest();
+    return nacl.sign.keyPair.fromSeed(new Uint8Array(seed));
+  }
+
+  /**
+   * Generates a real Ed25519 signature for a document hash on behalf of a notary.
+   */
+  public static signWithNotary(hashHex: string, notaryId: string): string {
+    const keypair = this.getNotaryKeypair(notaryId);
+    const message = Buffer.from(hashHex, 'hex');
+    const signature = nacl.sign.detached(new Uint8Array(message), keypair.secretKey);
+    return Buffer.from(signature).toString('base64');
+  }
+
+  /**
+   * Cryptographically verifies an Ed25519 signature against a message hash.
    */
   public static verifySignature(
     hashHex: string,
@@ -34,25 +54,17 @@ export class HashService {
     publicKeyBase64: string
   ): boolean {
     try {
-      // Format the public key to standard PEM format
-      let formattedKey = publicKeyBase64;
-      if (!publicKeyBase64.includes('-----BEGIN PUBLIC KEY-----')) {
-        formattedKey = `-----BEGIN PUBLIC KEY-----\n${publicKeyBase64.match(/.{1,64}/g)?.join('\n')}\n-----END PUBLIC KEY-----`;
-      }
+      const message = Buffer.from(hashHex, 'hex');
+      const signatureBytes = Buffer.from(signatureBase64, 'base64');
+      const publicKeyBytes = Buffer.from(publicKeyBase64, 'base64');
 
-      const verifier = crypto.createVerify('SHA256');
-      verifier.update(Buffer.from(hashHex, 'hex'));
-
-      return verifier.verify(
-        formattedKey,
-        Buffer.from(signatureBase64, 'base64')
+      return nacl.sign.detached.verify(
+        new Uint8Array(message),
+        new Uint8Array(signatureBytes),
+        new Uint8Array(publicKeyBytes)
       );
     } catch (err) {
-      console.error('Cryptographic signature verification failed:', err);
-      // Fallback for hackathon testing with simulated keys
-      if (signatureBase64.startsWith('mock_sig_')) {
-        return true;
-      }
+      console.error('Cryptographic Ed25519 signature verification failed:', err);
       return false;
     }
   }

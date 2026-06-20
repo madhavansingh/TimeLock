@@ -146,6 +146,36 @@ export class UpstreamError extends AppError {
   }
 }
 
+// ApiError alias for AppError base class
+export class ApiError extends AppError {}
+
+// ---------------------------------------------------------------------------
+// 502 — Blockchain Error
+// ---------------------------------------------------------------------------
+export class BlockchainError extends AppError {
+  constructor(message = 'Solana blockchain transaction failed or network is offline.', details?: unknown) {
+    super(message, 502, 'BLOCKCHAIN_UNAVAILABLE', true, details);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 502 — AI Service Error
+// ---------------------------------------------------------------------------
+export class AIServiceError extends AppError {
+  constructor(message = 'NVIDIA Nemotron AI service returned an error or is unconfigured.', details?: unknown) {
+    super(message, 502, 'AI_SERVICE_UNAVAILABLE', true, details);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 502 — Storage Error
+// ---------------------------------------------------------------------------
+export class StorageError extends AppError {
+  constructor(message = 'IPFS/Pinata storage upload failed or credentials unconfigured.', details?: unknown) {
+    super(message, 502, 'STORAGE_UNAVAILABLE', true, details);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Type guard
 // ---------------------------------------------------------------------------

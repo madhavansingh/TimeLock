@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { FileUp, Search, Eye, Download, LogOut, Lock, ShieldCheck, AlertTriangle, CheckCircle, FileText, ArrowRight } from 'lucide-react';
+import { FileUp, Search, Eye, Download, LogOut, Lock, ShieldCheck, AlertTriangle, CheckCircle, FileText, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { calculateSHA256 } from '@/lib/crypto';
@@ -28,6 +28,26 @@ export default function CitizenDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [verifyingFile, setVerifyingFile] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchDocuments = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await apiClient.get('/documents');
+      if (res.data) {
+        setDocuments(res.data);
+      } else {
+        setDocuments([]);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch registered documents.');
+      setDocuments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const syncDocumentStatuses = async (localDocs: LocalDocument[]) => {
     try {
@@ -49,7 +69,6 @@ export default function CitizenDashboard() {
         })
       );
       setDocuments(syncedDocs);
-      localStorage.setItem('registered_documents', JSON.stringify(syncedDocs));
     } catch (err) {
       console.error('Error syncing document statuses:', err);
     }
@@ -69,20 +88,11 @@ export default function CitizenDashboard() {
       return;
     }
 
-    const stored = localStorage.getItem('registered_documents');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as LocalDocument[];
-        setDocuments(parsed);
-        syncDocumentStatuses(parsed);
-      } catch {
-        setDocuments([]);
-      }
-    }
+    fetchDocuments();
   }, [user, router]);
 
   const totalDocs = documents.length;
-  const onchainDocs = documents.filter(d => ['ONCHAIN_CONFIRMED', 'NOTARY_SIGNED', 'FULLY_EXECUTED'].includes(d.status)).length;
+  const onchainDocs = documents.filter(d => ['ONCHAIN_CONFIRMED', 'NOTARY_REVIEW_STARTED', 'READY_FOR_SIGNATURE', 'NOTARY_SIGNED', 'FULLY_EXECUTED'].includes(d.status)).length;
   const pendingDocs = documents.filter(d => d.status === 'PENDING').length;
   const disputedDocs = documents.filter(d => d.status === 'DISPUTED').length;
 
@@ -149,6 +159,10 @@ export default function CitizenDashboard() {
         return <Badge className="bg-yellow-500/10 text-yellow-600 border border-yellow-500/25">Pending</Badge>;
       case 'ONCHAIN_CONFIRMED':
         return <Badge className="bg-foreground/5 text-foreground border border-foreground/20">Anchored</Badge>;
+      case 'NOTARY_REVIEW_STARTED':
+        return <Badge className="bg-blue-500/10 text-blue-600 border border-blue-500/25">Under Review</Badge>;
+      case 'READY_FOR_SIGNATURE':
+        return <Badge className="bg-purple-500/10 text-purple-600 border border-purple-500/25">Awaiting Signature</Badge>;
       case 'NOTARY_SIGNED':
         return <Badge className="bg-foreground/5 text-foreground border border-foreground/20 font-semibold">Notary Signed</Badge>;
       case 'FULLY_EXECUTED':
@@ -283,7 +297,20 @@ export default function CitizenDashboard() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                {filteredDocs.length === 0 ? (
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <RefreshCw className="h-8 w-8 text-muted-foreground/40 animate-spin mb-3" />
+                    <p className="text-muted-foreground text-sm font-medium">Loading documents...</p>
+                  </div>
+                ) : error ? (
+                  <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                    <AlertCircle className="h-8 w-8 text-destructive/80 mb-3" />
+                    <p className="text-destructive text-sm font-medium">{error}</p>
+                    <Button size="sm" onClick={fetchDocuments} variant="outline" className="mt-4 border-border hover:bg-accent text-foreground rounded-full">
+                      Retry Fetch
+                    </Button>
+                  </div>
+                ) : filteredDocs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <FileText className="h-10 w-10 text-muted-foreground/30 mb-3" />
                     <p className="text-muted-foreground text-sm font-medium">No documents registered yet.</p>

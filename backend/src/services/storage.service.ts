@@ -1,11 +1,70 @@
 import crypto from 'crypto';
 import { config } from '../config/env';
 import { logger } from '../config/logger';
+import { StorageError } from '../config/errors';
 
 export class StorageService {
+  private static readonly MASTER_KEY = process.env.MASTER_ENCRYPTION_KEY || 'ltn_master_enc_key_2026_kleos_super_secure';
+
+  public static encryptKey(plaintextKey: string): string {
+    const iv = crypto.randomBytes(12);
+    const hashedMaster = crypto.createHash('sha256').update(this.MASTER_KEY).digest();
+    const cipher = crypto.createCipheriv('aes-256-gcm', hashedMaster, iv);
+    let encrypted = cipher.update(plaintextKey, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    const authTag = cipher.getAuthTag().toString('hex');
+    return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+  }
+
+  public static decryptKey(encryptedKey: string): string {
+    try {
+      const parts = encryptedKey.split(':');
+      if (parts.length !== 3) return encryptedKey; // Fallback if already plaintext
+      const [ivHex, authTagHex, encryptedHex] = parts;
+      const iv = Buffer.from(ivHex, 'hex');
+      const authTag = Buffer.from(authTagHex, 'hex');
+      const hashedMaster = crypto.createHash('sha256').update(this.MASTER_KEY).digest();
+      const decipher = crypto.createDecipheriv('aes-256-gcm', hashedMaster, iv);
+      decipher.setAuthTag(authTag);
+      let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      return decrypted;
+    } catch (err) {
+      return encryptedKey;
+    }
+  }
+
+  /**
+   * Helper to execute a fetch operation with exponential backoff retries.
+   */
+  private static async fetchWithRetry(url: string, init: RequestInit, operationName: string): Promise<Response> {
+    const maxRetries = 3;
+    let attempt = 1;
+    let delay = 1000; // 1s initial delay
+
+    while (attempt <= maxRetries) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s request timeout
+        const res = await fetch(url, { ...init, signal: controller.signal });
+        clearTimeout(timeoutId);
+        return res;
+      } catch (err: any) {
+        logger.warn(`[Storage Retry] Operation "${operationName}" Attempt ${attempt} failed: ${err.message}`);
+        if (attempt === maxRetries) {
+          throw err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        attempt++;
+        delay *= 2; // Exponential backoff
+      }
+    }
+    throw new Error(`Storage operation "${operationName}" failed after retries.`);
+  }
+
   /**
    * Uploads an encrypted copy of the document to decentralized storage.
-   * Uses real Pinata IPFS API or falls back to simulation mode if mock JWT is active.
+   * STRICT NO-MOCK POLICY: If credentials are mock or upload fails, throw StorageError.
    */
   public static async uploadDocument(
     fileBuffer: Buffer,
@@ -24,14 +83,12 @@ export class StorageService {
 
     // Prepend the 16-byte IV to the encrypted bytes so that it is retrieved alongside the file
     const payload = Buffer.concat([iv, encryptedBytes]);
-    const keyReference = key.toString('hex'); // The key reference holds the key itself (hex encoded)
+    const rawKeyRef = key.toString('hex');
+    const keyReference = StorageService.encryptKey(rawKeyRef);
 
     if (isMock) {
-      // Compute mock IPFS CID based on SHA256 of payload bytes
-      const hash = crypto.createHash('sha256').update(payload).digest('hex');
-      const cid = 'Qm' + hash.slice(0, 44);
-      logger.info(`[STORAGE MOCK] Simulated IPFS upload. File: ${filename}, Encrypted Size: ${payload.length} bytes, CID: ${cid}`);
-      return { cid, keyReference, isMock: true };
+      logger.error('[STORAGE ERROR] Mock Pinata upload requested but STRICT NO-MOCK POLICY is active.');
+      throw new StorageError('IPFS/Pinata storage credentials are not configured or invalid. Please configure a valid PINATA_JWT in the environment.');
     }
 
     // 2. Real Pinata IPFS upload using fetch and FormData
@@ -52,13 +109,13 @@ export class StorageService {
       });
       formData.append('pinataMetadata', metadata);
 
-      const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+      const response = await this.fetchWithRetry('https://api.pinata.cloud/pinning/pinFileToIPFS', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.pinataJwt}`,
         },
         body: formData,
-      });
+      }, 'pinFileToIPFS');
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -75,9 +132,9 @@ export class StorageService {
         keyReference,
         isMock: false
       };
-    } catch (err) {
-      logger.error('[STORAGE] Real Pinata upload failed, throwing error', { error: (err as Error).message });
-      throw err;
+    } catch (err: any) {
+      logger.error('[STORAGE] Real Pinata upload failed, throwing StorageError', { error: err.message });
+      throw new StorageError(`Failed to upload document to IPFS storage: ${err.message}`, err);
     }
   }
 
@@ -89,11 +146,12 @@ export class StorageService {
                    config.pinataJwt === 'mock_pinata_jwt_token_for_hackathon' ||
                    config.pinataJwt.startsWith('mock');
 
-    const key = Buffer.from(keyReference, 'hex');
+    const decryptedKey = StorageService.decryptKey(keyReference);
+    const key = Buffer.from(decryptedKey, 'hex');
 
     if (isMock) {
-      logger.info(`[STORAGE MOCK] Downloading simulated file from IPFS CID: ${cid}`);
-      return Buffer.from('mocked_decrypted_document_binary_data');
+      logger.error('[STORAGE ERROR] Mock Pinata download requested but STRICT NO-MOCK POLICY is active.');
+      throw new StorageError('IPFS/Pinata storage credentials are not configured or invalid. Please configure a valid PINATA_JWT in the environment.');
     }
 
     logger.info(`[STORAGE] Downloading real file from IPFS gateway... CID: ${cid}`);
@@ -108,7 +166,7 @@ export class StorageService {
       }
 
       const url = `${gatewayUrl}/ipfs/${cid}`;
-      const response = await fetch(url);
+      const response = await this.fetchWithRetry(url, { method: 'GET' }, 'downloadFromIPFS');
 
       if (!response.ok) {
         throw new Error(`IPFS gateway download failed: ${response.status} - ${response.statusText}`);
@@ -131,9 +189,9 @@ export class StorageService {
 
       logger.info(`[STORAGE] Real IPFS download and decryption completed successfully for CID: ${cid}`);
       return decrypted;
-    } catch (err) {
-      logger.error(`[STORAGE] Real IPFS download/decryption failed for CID: ${cid}`, { error: (err as Error).message });
-      throw err;
+    } catch (err: any) {
+      logger.error(`[STORAGE] Real IPFS download/decryption failed for CID: ${cid}`, { error: err.message });
+      throw new StorageError(`Failed to retrieve and decrypt document from IPFS: ${err.message}`, err);
     }
   }
 }

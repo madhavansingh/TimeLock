@@ -1,10 +1,43 @@
+# Dependency Directories
 node_modules/
+**/node_modules/
+
+# Next.js Build Outputs
 .next/
+**/.next/
+
+# Build and Distribution Outputs
 dist/
+**/dist/
 build/
+**/build/
 coverage/
+**/coverage/
+
+# Environment Files
 .env
+.env.*
 .env.local
-.vercel/
-.cache/
+!.env.example
+
+# OS Metadata
+.DS_Store
+**/.DS_Store
+
+# Logs
+logs/
+**/logs/
 *.log
+
+# Rust / Anchor / Solana Artifacts
+target/
+**/target/
+.anchor/
+**/.anchor/
+blockchain/target/
+blockchain/.anchor/
+*.keypair.json
+
+# Prisma generated caches
+.prisma/
+**/prisma/generated-client/
