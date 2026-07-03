@@ -1,7 +1,12 @@
 "use client";
 
 import { ArrowUpRight } from "lucide-react";
-import { AnimatedWave } from "./animated-wave";
+import dynamic from "next/dynamic";
+
+const AnimatedWave = dynamic(
+  () => import("./animated-wave").then((m) => m.AnimatedWave),
+  { ssr: false }
+);
 import Link from "next/link";
 
 const footerLinks = {

@@ -14,8 +14,15 @@ import aiRoutes from './routes/ai.routes';
 import avccRoutes from './routes/avcc.routes';
 import adminRoutes from './routes/admin.routes';
 import judgeRoutes from './routes/judge.routes';
+import operationsRoutes from './routes/operations.routes';
+import interopSandboxRoutes from './routes/interop-sandbox.routes';
+import governanceRoutes from './routes/governance.routes';
+import twinEvolutionRoutes from './routes/twin-evolution.routes';
+import { EnterpriseApiGateway } from './middleware/api-gateway.middleware';
 import { errorMiddleware } from './middleware/error.middleware';
 import { requestLoggerMiddleware } from './middleware/request-logger.middleware';
+import { tenantMiddleware } from './middleware/tenant.middleware';
+import { classificationMiddleware } from './middleware/classification.middleware';
 
 import { config } from './config/env';
 
@@ -43,7 +50,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-nvidia-api-key']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'x-nvidia-api-key', 'x-signature', 'x-timestamp', 'x-nonce', 'x-idempotency-key', 'x-api-version']
 }));
 
 // Body parsing
@@ -64,6 +71,9 @@ app.use((req, res, next) => {
 // Structured HTTP request logger (after request ID so it can log the ID)
 app.use(requestLoggerMiddleware);
 
+// Multi-tenant context middleware (enforces tenant boundary isolation across downstream execution)
+app.use(tenantMiddleware);
+
 // ---------------------------------------------------------------------------
 // System routes — health, readiness, version (no auth required)
 // ---------------------------------------------------------------------------
@@ -74,17 +84,21 @@ app.use('/', systemRoutes);
 // ---------------------------------------------------------------------------
 app.use('/v1/auth', authRoutes);
 app.use('/v1/notaries', notaryRoutes);
-app.use('/v1/documents', documentRoutes);
+app.use('/v1/documents', EnterpriseApiGateway.intercept, classificationMiddleware, documentRoutes);
 app.use('/v1/payments', paymentRoutes);
 app.use('/v1/users', userRoutes);
-app.use('/v1/transfers', transferRoutes);
-app.use('/transfers', transferRoutes);
+app.use('/v1/transfers', EnterpriseApiGateway.intercept, classificationMiddleware, transferRoutes);
+app.use('/transfers', EnterpriseApiGateway.intercept, classificationMiddleware, transferRoutes);
 app.use('/v1/authorities', authorityRoutes);
 app.use('/authorities', authorityRoutes);
 app.use('/v1/ai', aiRoutes);
 app.use('/v1/avcc', avccRoutes);
 app.use('/v1/admin', adminRoutes);
 app.use('/v1/judge', judgeRoutes);
+app.use('/v1/operations/governance', governanceRoutes);
+app.use('/v1/operations/twins', twinEvolutionRoutes);
+app.use('/v1/operations', operationsRoutes);
+app.use('/v1/interop-sandbox', interopSandboxRoutes);
 
 // ---------------------------------------------------------------------------
 // Global error handler — must be registered LAST

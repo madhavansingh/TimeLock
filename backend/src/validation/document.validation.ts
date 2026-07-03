@@ -12,6 +12,15 @@ export const LocalRegisterDocumentSchema = z.object({
   registrationNumber: z.string().optional(),
   ownerName: z.string().optional(),
   paymentId: z.string().uuid().optional(),
+  clientHash: z.string().regex(/^[a-fA-F0-9]{64}$/, { message: 'Invalid client hash format.' }),
+  uploadTimestamp: z.string(),
+  uploadSessionId: z.string().uuid({ message: 'Invalid upload session ID.' }),
+  algorithm: z.enum(['SHA256', 'SHA3', 'BLAKE3']).default('SHA256'),
+  frontendVersion: z.string(),
+  browserTimezone: z.string(),
+  browserUserAgent: z.string(),
+  browserLanguage: z.string(),
+  clientVersion: z.string(),
 });
 
 export const LocalRecordSignatureSchema = z.object({

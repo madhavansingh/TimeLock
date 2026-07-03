@@ -5,6 +5,8 @@ import { logger } from '../config/logger';
 import { prisma } from '../config/db';
 import { HashService } from './hash.service';
 import { PublicKey } from '@solana/web3.js';
+import { ResilienceService } from './resilience.service';
+import { ProductionHealthService } from './production-health.service';
 
 export class BlockchainService {
   private static solanaClient: SolanaClient;
@@ -28,29 +30,49 @@ export class BlockchainService {
   }
 
   /**
+   * Retrieves the Base58 address of the system relayer wallet.
+   */
+  public static getRelayerAddress(): string {
+    const { solanaClient } = this.getClients();
+    return solanaClient.getAddress();
+  }
+
+  /**
+   * Retrieves the active SolanaClient instance.
+   */
+  public static getSolanaClientInstance() {
+    const { solanaClient } = this.getClients();
+    return solanaClient;
+  }
+
+  /**
    * Helper to execute program client operations with retries (exponential backoff)
-   * and throw typed BlockchainError if all attempts fail.
+   * wrapped in a Circuit Breaker and Timeout, throwing BlockchainError if it fails.
    */
   private static async executeWithRetry<T>(operationName: string, fn: () => Promise<T>): Promise<T> {
-    const maxRetries = 3;
-    let attempt = 1;
-    let delay = 500; // 500ms initial delay
+    const startTime = Date.now();
+    try {
+      const result = await ResilienceService.execute(
+        'SOLANA_RPC',
+        async () => {
+          return await ResilienceService.executeWithRetry(
+            `Solana_${operationName}`,
+            fn,
+            3,
+            500
+          );
+        },
+        [],
+        { failureThreshold: 3, cooldownMs: 10000, timeoutMs: 30000 }
+      );
 
-    while (attempt <= maxRetries) {
-      try {
-        return await fn();
-      } catch (err: any) {
-        logger.warn(`[Solana Retry] Operation "${operationName}" Attempt ${attempt} failed: ${err.message}`);
-        if (attempt === maxRetries) {
-          logger.error(`[Solana Fatal] Operation "${operationName}" failed after ${maxRetries} attempts: ${err.message}`);
-          throw new BlockchainError(`Solana blockchain operation "${operationName}" failed: ${err.message}`, err);
-        }
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        attempt++;
-        delay *= 2; // Exponential backoff
-      }
+      ProductionHealthService.registerExecution('SOLANA_RPC', Date.now() - startTime, true);
+      return result;
+    } catch (err: any) {
+      ProductionHealthService.registerExecution('SOLANA_RPC', Date.now() - startTime, false, err.message);
+      logger.error(`[Blockchain Service Fatal] Solana operation "${operationName}" failed: ${err.message}`);
+      throw new BlockchainError(`Solana blockchain operation "${operationName}" failed: ${err.message}`, err);
     }
-    throw new BlockchainError(`Solana blockchain operation "${operationName}" failed.`);
   }
 
   /**

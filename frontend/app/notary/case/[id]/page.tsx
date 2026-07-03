@@ -62,6 +62,12 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Digital Twin state
+  const [digitalTwin, setDigitalTwin] = useState<any | null>(null);
+  const [twinHistory, setTwinHistory] = useState<any[]>([]);
+  const [loadingTwin, setLoadingTwin] = useState(false);
+  const [selectedTwinVersion, setSelectedTwinVersion] = useState<number | null>(null);
+
   // AI Copilot state
   const [aiInsights, setAiInsights] = useState<any | null>(null);
   const [copilotData, setCopilotData] = useState<any | null>(null);
@@ -193,6 +199,29 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
     }
   };
 
+  const fetchDigitalTwin = async () => {
+    setLoadingTwin(true);
+    try {
+      const [twinRes, historyRes] = await Promise.all([
+        apiClient.get(`/documents/${id}/twin`),
+        apiClient.get(`/documents/${id}/twin/history`)
+      ]);
+      if (twinRes.data) {
+        setDigitalTwin(twinRes.data);
+        if (selectedTwinVersion === null) {
+          setSelectedTwinVersion(twinRes.data.version);
+        }
+      }
+      if (historyRes.data) {
+        setTwinHistory(historyRes.data);
+      }
+    } catch (err) {
+      console.warn('Failed to load Digital Twin data:', err);
+    } finally {
+      setLoadingTwin(false);
+    }
+  };
+
   const handleRegenerateAi = async () => {
     setLoadingAi(true);
     setLoadingCopilot(true);
@@ -200,10 +229,12 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
     try {
       await apiClient.post(`/v1/ai/documents/${id}/regenerate`, {});
       await apiClient.post(`/documents/${id}/ai-insights/regenerate`, {});
+      await apiClient.post(`/documents/${id}/twin/recalculate`, {});
       await Promise.all([
         fetchAiInsights(),
         fetchCopilotData(),
-        fetchDetails()
+        fetchDetails(),
+        fetchDigitalTwin()
       ]);
     } catch (err: any) {
       console.warn('Failed to regenerate AI compliance logs:', err);
@@ -227,7 +258,8 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
       if (res.data) {
         await Promise.all([
           fetchDetails(),
-          fetchAiInsights()
+          fetchAiInsights(),
+          fetchDigitalTwin()
         ]);
         alert(`Requested "${recommendedDoc}" evidence challenge from citizen.`);
       }
@@ -250,6 +282,7 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
     fetchCopilotData();
     fetchOwnershipHistory();
     fetchNavigatorCases();
+    fetchDigitalTwin();
   }, [id, user]);
 
   const handleChecklistToggle = async (itemId: string, newStatus: 'PASSED' | 'FAILED' | 'PENDING') => {
@@ -951,25 +984,28 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
           </Card>
         </main>
 
-        {/* RIGHT PANEL: AI Verification Copilot */}
+        {/* RIGHT PANEL: Digital Twin Intelligence Workspace */}
         <aside className="w-96 border-l border-border flex flex-col h-full bg-card/15 overflow-hidden shrink-0">
           <div className="p-4 border-b border-border bg-card/30 flex items-center justify-between shrink-0">
             <span className="font-bold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <Cpu className="h-4 w-4 text-primary" />
-              AI Copilot Intelligence
+              <Cpu className="h-4 w-4 text-primary animate-pulse" />
+              Digital Twin Intelligence
             </span>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleRegenerateAi}
-              disabled={loadingAi || loadingCopilot}
-              className="h-7 w-7 rounded-full bg-card/45 border-border/80"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loadingAi || loadingCopilot ? 'animate-spin' : ''}`} />
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleRegenerateAi}
+                disabled={loadingAi || loadingCopilot || loadingTwin}
+                className="h-7 w-7 rounded-full bg-card/45 border-border/80"
+                title="Recalculate and Synchronize Digital Twin"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingAi || loadingCopilot || loadingTwin ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          <div className="flex-1 overflow-y-auto p-4 space-y-5">
             {aiErrorMsg ? (
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-xs text-destructive space-y-2">
                 <div className="flex items-center gap-2 font-bold">
@@ -979,189 +1015,261 @@ export default function VerificationWorkspace({ params }: { params: Promise<{ id
                 <p className="text-foreground/90 font-mono text-[11px] leading-relaxed">{aiErrorMsg}</p>
                 <p className="text-[10px] text-muted-foreground">Nemotron reasoning services could not be contacted.</p>
               </div>
-            ) : loadingAi || loadingCopilot ? (
+            ) : loadingTwin && !digitalTwin ? (
               <div className="py-16 text-center space-y-3">
                 <Activity className="h-6 w-6 text-primary animate-spin mx-auto" />
-                <p className="text-xs text-muted-foreground">Contacting NVIDIA Nemotron...</p>
+                <p className="text-xs text-muted-foreground">Compiling Digital Twin model...</p>
+              </div>
+            ) : !digitalTwin ? (
+              <div className="py-16 text-center space-y-3">
+                <AlertCircle className="h-8 w-8 text-yellow-500 mx-auto" />
+                <p className="text-xs text-muted-foreground">No Digital Twin compiled for this document.</p>
+                <Button onClick={handleRegenerateAi} size="sm" className="rounded-full bg-primary text-xs">
+                  Compile Baseline Twin
+                </Button>
               </div>
             ) : (
-              <>
-                {/* Approval Probability */}
-                <div className="space-y-2">
-                  <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Approval Probability</span>
-                  <div className="p-4 rounded-lg bg-background/45 border border-border/60 flex items-center justify-between">
-                    <div className="space-y-1">
-                      <span className="text-3xl font-bold font-mono text-emerald-500">
-                        {copilotData?.prediction?.approvalProbability ?? 0}%
-                      </span>
-                      <span className="block text-[9px] text-muted-foreground">Confidence: {copilotData?.prediction?.confidence ?? 0}%</span>
-                    </div>
-                    <div className="text-right">
-                      <Badge className={`text-[9px] font-bold border-0 ${
-                        copilotData?.prediction?.missingEvidenceRisk === 'LOW' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'
-                      }`}>
-                        {copilotData?.prediction?.missingEvidenceRisk ?? 'MEDIUM'} RISK
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
+              (() => {
+                // Determine which version data we are inspecting
+                const activeTwinData = selectedTwinVersion && digitalTwin.version !== selectedTwinVersion
+                  ? twinHistory.find(h => h.version === selectedTwinVersion) || digitalTwin
+                  : digitalTwin;
 
-                {/* Risk & Conflict Summary */}
-                <div className="space-y-2">
-                  <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Conflict & Risk Assessment</span>
-                  <div className="p-4 rounded-lg bg-background/45 border border-border/60 space-y-3">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-muted-foreground font-semibold">Conflict Score:</span>
-                      <span className="font-mono font-bold">{copilotData?.conflict?.conflictScore ?? 0}/100</span>
-                    </div>
-                    <div className="w-full bg-muted/60 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full ${
-                          (copilotData?.conflict?.conflictScore ?? 0) > 50 ? 'bg-red-500' : 'bg-emerald-500'
-                        }`}
-                        style={{ width: `${copilotData?.conflict?.conflictScore ?? 0}%` }}
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground leading-normal">
-                      Classification: <span className="font-semibold text-foreground uppercase">{copilotData?.conflict?.conflictLevel ?? 'NONE'}</span>
-                    </p>
-                  </div>
-                </div>
+                const passport = activeTwinData.passportData || {};
+                const isHistorical = activeTwinData.version !== digitalTwin.version;
 
-                {/* Missing Evidence Recommendations & Action requests */}
-                <div className="space-y-3">
-                  <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Missing Evidence & Recommendations</span>
-                  {aiInsights?.evidenceRecommendations && aiInsights.evidenceRecommendations.length > 0 ? (
-                    <div className="space-y-3">
-                      {aiInsights.evidenceRecommendations.map((rec: any, idx: number) => (
-                        <div key={idx} className="p-3 rounded-lg bg-background/45 border border-border/60 text-xs space-y-2">
-                          <div className="flex justify-between items-start">
-                            <span className="font-semibold text-foreground flex items-center gap-1.5">
-                              <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
-                              {rec.recommendedDoc}
-                            </span>
-                            <Badge className={`text-[8px] border-0 px-1.5 py-0 font-bold ${
-                              rec.priority === 'HIGH' ? 'bg-red-500/10 text-red-500' : 'bg-yellow-500/10 text-yellow-600'
-                            }`}>
-                              {rec.priority}
-                            </Badge>
+                return (
+                  <>
+                    {/* Version Selector Dropdown */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider block">Model Version Control</span>
+                        {isHistorical && (
+                          <Badge className="bg-yellow-500/10 text-yellow-600 border border-yellow-500/20 text-[9px] font-sans">
+                            Historical Snapshot
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedTwinVersion || digitalTwin.version}
+                          onChange={(e) => setSelectedTwinVersion(Number(e.target.value))}
+                          className="flex-1 text-xs bg-background border border-border rounded px-2.5 py-1.5 text-foreground focus:outline-none font-mono font-semibold"
+                        >
+                          <option value={digitalTwin.version}>v{digitalTwin.version} (Active Twin - Latest)</option>
+                          {twinHistory
+                            .filter(h => h.version !== digitalTwin.version)
+                            .map(h => (
+                              <option key={h.version} value={h.version}>
+                                v{h.version} ({h.triggerEvent || 'UPDATE_EVENT'})
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground px-0.5">
+                        <span>Trigger: {activeTwinData.triggerEvent || 'SYSTEM_MIGRATION'}</span>
+                        <span>{new Date(activeTwinData.createdAt).toLocaleDateString()} {new Date(activeTwinData.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                      </div>
+                    </div>
+
+                    {/* Verification Passport Status */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Verification Passport</span>
+                      <div className="p-3.5 rounded-xl bg-background/40 border border-border/80 space-y-3 shadow-inner">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-semibold text-muted-foreground">Passport Status:</span>
+                          <Badge className={`text-[10px] font-black border-0 px-2 py-0.5 uppercase ${
+                            passport.verificationReadiness === 'READY'
+                              ? 'bg-emerald-500/10 text-emerald-500'
+                              : passport.verificationReadiness === 'RISK_DETECTED'
+                                ? 'bg-red-500/10 text-red-500'
+                                : 'bg-yellow-500/10 text-yellow-600'
+                          }`}>
+                            {passport.verificationReadiness || 'INCOMPLETE'}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-muted-foreground">Verification Score:</span>
+                          <span className={`text-2xl font-mono font-black ${
+                            (passport.overallVerificationScore ?? 0) >= 80 
+                              ? 'text-emerald-500' 
+                              : (passport.overallVerificationScore ?? 0) >= 50 
+                                ? 'text-yellow-500' 
+                                : 'text-red-500'
+                          }`}>
+                            {passport.overallVerificationScore ?? 0}%
+                          </span>
+                        </div>
+                        <div className="pt-2 border-t border-border/40 space-y-1">
+                          <span className="block text-[8px] font-mono text-muted-foreground uppercase tracking-widest">Passport Registry Hash</span>
+                          <span className="block font-mono text-[9px] text-muted-foreground select-all break-all bg-background/60 p-1.5 rounded border border-border/50">
+                            {passport.passportHash || 'AWAITING_ANALYTIC_PROVENANCE'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Trust Indices Breakdown */}
+                    <div className="space-y-2.5">
+                      <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Twin Trust Indices</span>
+                      <div className="p-3.5 rounded-xl bg-background/30 border border-border/60 space-y-2.5 text-xs">
+                        {/* Fraud Risk Indicator */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between font-mono text-[10px]">
+                            <span className="text-muted-foreground">FRAUD RISK PROBABILITY:</span>
+                            <span className={`font-bold ${passport.fraudProbability > 50 ? 'text-red-500' : 'text-emerald-500'}`}>{passport.fraudProbability ?? 0}%</span>
                           </div>
-                          <p className="text-[11px] text-muted-foreground leading-normal">{rec.reason}</p>
-                          <div className="flex items-center justify-between pt-2 border-t border-border/40 text-[10px]">
-                            <span className="text-emerald-500 font-semibold font-mono">
-                              +{rec.expectedTrustIncrease} Trust Score
-                            </span>
-                            {rec.requested ? (
-                              <span className="text-yellow-600 font-semibold italic flex items-center gap-1">
-                                <Check className="h-3 w-3" /> Requested
-                              </span>
-                            ) : (
-                              <Button
-                                size="sm"
-                                onClick={() => handleRequestEvidence(rec.recommendedDoc)}
-                                className="h-6 text-[9px] rounded-full bg-primary hover:bg-primary/90 text-primary-foreground px-2.5 font-bold"
-                              >
-                                Request From Citizen
-                              </Button>
-                            )}
+                          <div className="w-full bg-muted/50 rounded-full h-1 overflow-hidden">
+                            <div className={`h-full rounded-full ${passport.fraudProbability > 50 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${passport.fraudProbability ?? 0}%` }} />
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-xs text-emerald-500 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                      <span>Evidence matrix complete. No recommendations.</span>
-                    </div>
-                  )}
-                </div>
 
-                {/* Recommended Actions */}
-                <div className="space-y-2">
-                  <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Recommended Actions</span>
-                  <div className="p-3.5 rounded-lg bg-background/45 border border-border/60 text-xs space-y-2">
-                    {copilotData?.recommendation?.rationale ? (
-                      (() => {
-                        try {
-                          const rationale = typeof copilotData.recommendation.rationale === 'string'
-                            ? JSON.parse(copilotData.recommendation.rationale)
-                            : copilotData.recommendation.rationale;
-                          if (Array.isArray(rationale)) {
-                            return rationale.map((r: string, idx: number) => (
-                              <div key={idx} className="flex items-start gap-1.5 text-muted-foreground leading-normal">
+                        {/* Evidence Completeness Indicator */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between font-mono text-[10px]">
+                            <span className="text-muted-foreground">EVIDENCE MATRIX COVERAGE:</span>
+                            <span className="text-foreground font-bold">{passport.evidenceCoverage ?? 0}%</span>
+                          </div>
+                          <div className="w-full bg-muted/50 rounded-full h-1 overflow-hidden">
+                            <div className="bg-primary h-full rounded-full" style={{ width: `${passport.evidenceCoverage ?? 0}%` }} />
+                          </div>
+                        </div>
+
+                        {/* Registry Overlaps Index */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between font-mono text-[10px]">
+                            <span className="text-muted-foreground">REGISTRY CONSISTENCY:</span>
+                            <span className="text-foreground font-bold">{passport.registryConfidence ?? 0}%</span>
+                          </div>
+                          <div className="w-full bg-muted/50 rounded-full h-1 overflow-hidden">
+                            <div className="bg-primary h-full rounded-full" style={{ width: `${passport.registryConfidence ?? 0}%` }} />
+                          </div>
+                        </div>
+
+                        {/* Solana Anchoring Confidence */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between font-mono text-[10px]">
+                            <span className="text-muted-foreground">BLOCKCHAIN ATTESTATION:</span>
+                            <span className="text-foreground font-bold">{passport.blockchainConfidence ?? 0}%</span>
+                          </div>
+                          <div className="w-full bg-muted/50 rounded-full h-1 overflow-hidden">
+                            <div className="bg-primary h-full rounded-full" style={{ width: `${passport.blockchainConfidence ?? 0}%` }} />
+                          </div>
+                        </div>
+
+                        {/* Legal Compliance Check */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between font-mono text-[10px]">
+                            <span className="text-muted-foreground">LEGAL COMPLIANCE:</span>
+                            <span className="text-foreground font-bold">{passport.legalCompliance ?? 0}%</span>
+                          </div>
+                          <div className="w-full bg-muted/50 rounded-full h-1 overflow-hidden">
+                            <div className="bg-primary h-full rounded-full" style={{ width: `${passport.legalCompliance ?? 0}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top Recommended Actions */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Nemotron Recommendations</span>
+                      <div className="p-3.5 rounded-xl bg-background/45 border border-border/60 text-xs space-y-2.5">
+                        {activeTwinData.aiAssessments?.recommendations && activeTwinData.aiAssessments.recommendations.length > 0 ? (
+                          activeTwinData.aiAssessments.recommendations.map((rec: string, idx: number) => (
+                            <div key={idx} className="flex items-start gap-2 text-muted-foreground leading-normal">
+                              <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                              <span>{rec}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-emerald-500 flex items-center gap-1.5 italic">
+                            <CheckCircle2 className="h-4 w-4 shrink-0" />
+                            Deed meets all baseline compliance parameters.
+                          </p>
+                        )}
+                        
+                        {/* Explainable Decision Rationale */}
+                        {activeTwinData.aiAssessments?.decisionRationale && activeTwinData.aiAssessments.decisionRationale.length > 0 && (
+                          <div className="pt-2 border-t border-border/40 space-y-1.5">
+                            <span className="text-[9px] font-mono text-muted-foreground uppercase block">Decision Rationale</span>
+                            {activeTwinData.aiAssessments.decisionRationale.map((rat: string, idx: number) => (
+                              <div key={idx} className="flex items-start gap-1.5 text-muted-foreground text-[11px] leading-normal pl-1">
                                 <span className="text-primary mt-0.5">•</span>
-                                <span>{r}</span>
+                                <span>{rat}</span>
                               </div>
-                            ));
-                          }
-                        } catch(e) {}
-                        return <p className="text-muted-foreground">{copilotData.recommendation.rationale}</p>;
-                      })()
-                    ) : (
-                      <p className="text-muted-foreground italic">No actions recommended yet.</p>
-                    )}
-                  </div>
-                </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
-                {/* Conflict Findings */}
-                <div className="space-y-2">
-                  <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Conflict Findings</span>
-                  <div className="p-3.5 rounded-lg bg-background/45 border border-border/60 text-xs space-y-2">
-                    {copilotData?.conflict?.findings ? (
-                      (() => {
-                        try {
-                          const findings = typeof copilotData.conflict.findings === 'string'
-                            ? JSON.parse(copilotData.conflict.findings)
-                            : copilotData.conflict.findings;
-                          if (Array.isArray(findings) && findings.length > 0) {
-                            return findings.map((f: string, idx: number) => (
-                              <div key={idx} className="flex items-start gap-1.5 text-muted-foreground leading-normal">
-                                <AlertTriangle className="h-3.5 w-3.5 text-yellow-600 shrink-0 mt-0.5" />
-                                <span>{f}</span>
+                    {/* Missing Evidence & Action Requests */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Required Evidence Checklist</span>
+                      {aiInsights?.evidenceRecommendations && aiInsights.evidenceRecommendations.length > 0 ? (
+                        <div className="space-y-2.5">
+                          {aiInsights.evidenceRecommendations.map((rec: any, idx: number) => (
+                            <div key={idx} className="p-3 rounded-xl bg-background/45 border border-border/60 text-xs space-y-2">
+                              <div className="flex justify-between items-start">
+                                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
+                                  {rec.recommendedDoc}
+                                </span>
+                                <Badge className={`text-[8px] border-0 px-1.5 py-0 font-bold ${
+                                  rec.priority === 'HIGH' ? 'bg-red-500/10 text-red-500' : 'bg-yellow-500/10 text-yellow-600'
+                                }`}>
+                                  {rec.priority}
+                                </Badge>
                               </div>
-                            ));
-                          }
-                        } catch(e) {}
-                        return <p className="text-slate-300">{copilotData.conflict.findings}</p>;
-                      })()
-                    ) : (
-                      <p className="text-emerald-500 flex items-center gap-1.5">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                        No registry conflicts detected.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Cross Examination Suggestions */}
-                <div className="space-y-2">
-                  <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Cross Examination Suggestions</span>
-                  <div className="p-3.5 rounded-lg bg-background/45 border border-border/60 text-xs space-y-2 max-h-60 overflow-y-auto">
-                    {copilotData?.questions?.questions ? (
-                      (() => {
-                        try {
-                          const questions = typeof copilotData.questions.questions === 'string'
-                            ? JSON.parse(copilotData.questions.questions)
-                            : copilotData.questions.questions;
-                          if (Array.isArray(questions) && questions.length > 0) {
-                            return questions.map((q: any, idx: number) => (
-                              <div key={idx} className="border-l border-primary/20 pl-2.5 py-1">
-                                <div className="font-semibold text-foreground/80 leading-normal">{q.question}</div>
-                                {q.requiredEvidence && (
-                                  <div className="text-[10px] text-muted-foreground mt-0.5">Required Proof: {q.requiredEvidence}</div>
+                              <p className="text-[11px] text-muted-foreground leading-normal">{rec.reason}</p>
+                              <div className="flex items-center justify-between pt-2 border-t border-border/40 text-[10px]">
+                                <span className="text-emerald-500 font-semibold font-mono">
+                                  +{rec.expectedTrustIncrease} Trust Score
+                                </span>
+                                {rec.requested ? (
+                                  <span className="text-yellow-600 font-semibold italic flex items-center gap-1">
+                                    <Check className="h-3 w-3" /> Requested
+                                  </span>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleRequestEvidence(rec.recommendedDoc)}
+                                    className="h-6 text-[9px] rounded-full bg-primary hover:bg-primary/90 text-primary-foreground px-2.5 font-bold"
+                                  >
+                                    Request From Citizen
+                                  </Button>
                                 )}
                               </div>
-                            ));
-                          }
-                        } catch(e) {}
-                        return <p className="text-muted-foreground">{copilotData.questions.questions}</p>;
-                      })()
-                    ) : (
-                      <p className="text-muted-foreground italic">No suggestions compiled.</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-xs text-emerald-500 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                          <span>All supporting evidence requirements fulfilled.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Cross Examination Registry Challenges */}
+                    {activeTwinData.aiAssessments?.questions && activeTwinData.aiAssessments.questions.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-mono text-muted-foreground uppercase block tracking-wider">Cross Examination Suggestions</span>
+                        <div className="p-3.5 rounded-xl bg-background/45 border border-border/60 text-xs space-y-2 max-h-60 overflow-y-auto">
+                          {activeTwinData.aiAssessments.questions.map((q: any, idx: number) => (
+                            <div key={idx} className="border-l border-primary/20 pl-2.5 py-1">
+                              <div className="font-semibold text-foreground/80 leading-normal">{q.question}</div>
+                              {q.requiredEvidence && (
+                                <div className="text-[10px] text-muted-foreground mt-0.5">Suggested Proof: {q.requiredEvidence}</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                  </div>
-                </div>
-              </>
+                  </>
+                );
+              })()
             )}
           </div>
         </aside>

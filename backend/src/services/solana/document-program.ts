@@ -1,5 +1,6 @@
 import { PublicKey, SystemProgram, Transaction, TransactionInstruction, Signer, Keypair } from '@solana/web3.js';
 import { SolanaClient, BlockchainConfig } from './solana-client';
+import { logger } from '../../config/logger';
 import crypto from 'crypto';
 
 // Anchor Program ID default for Legal TimeLock Network (LTN)
@@ -2583,7 +2584,7 @@ export class DocumentProgramClient {
           this.eventsProcessedCount++;
           this.lastEventTime = Math.floor(Date.now() / 1000);
           
-          console.log(`[LTN Event Listener] Received program logs at slot ${ctx.slot}: ${JSON.stringify(logs.logs)}`);
+          logger.info(`[LTN Event Listener] Received program logs at slot ${ctx.slot}: ${JSON.stringify(logs.logs)}`, { slot: ctx.slot });
           for (const logLine of logs.logs) {
             this.processRawLogLine(logLine, logs.signature, ctx.slot);
           }
@@ -2591,7 +2592,7 @@ export class DocumentProgramClient {
         this.client.commitment
       );
       this.listenerActive = true;
-      console.log(`[LTN Event Listener] WebSocket listener registered on-chain for program ${programId.toBase58()}`);
+      logger.info(`[LTN Event Listener] WebSocket listener registered on-chain for program ${programId.toBase58()}`, { programId: programId.toBase58() });
     } catch (err: any) {
       console.warn(`[LTN Event Listener] Connection failed: ${err.message}. Enabling offline failover listener.`);
       this.listenerActive = true;
@@ -2613,7 +2614,7 @@ export class DocumentProgramClient {
       this.listenerSubscriptionId = null;
     }
     this.listenerActive = false;
-    console.log('[LTN Event Listener] Log listener stopped.');
+    logger.info('[LTN Event Listener] Log listener stopped.');
   }
 
   /**
@@ -3628,7 +3629,7 @@ export class DocumentProgramClient {
       if (accountInfo) {
         const sigs = await this.client.connection.getSignaturesForAddress(pda, { limit: 1 });
         if (sigs.length > 0) {
-          console.log(`[LTN Client] Document PDA ${pda.toBase58()} already exists. Returning existing TX: ${sigs[0].signature}`);
+          logger.info(`[LTN Client] Document PDA ${pda.toBase58()} already exists. Returning existing TX: ${sigs[0].signature}`, { pda: pda.toBase58(), signature: sigs[0].signature });
           return sigs[0].signature;
         }
       }
@@ -3696,7 +3697,7 @@ export class DocumentProgramClient {
       if (accountInfo) {
         const sigs = await this.client.connection.getSignaturesForAddress(sigPda, { limit: 1 });
         if (sigs.length > 0) {
-          console.log(`[LTN Client] Signature PDA ${sigPda.toBase58()} already exists. Returning existing TX: ${sigs[0].signature}`);
+          logger.info(`[LTN Client] Signature PDA ${sigPda.toBase58()} already exists. Returning existing TX: ${sigs[0].signature}`, { sigPda: sigPda.toBase58(), signature: sigs[0].signature });
           return sigs[0].signature;
         }
       }
@@ -3760,7 +3761,7 @@ export class DocumentProgramClient {
     try {
       const record = await this.fetchDocumentRecord(documentId);
       if (record && record.status === statusByte) {
-        console.log(`[LTN Client] Document ${documentId} status is already ${statusByte}. Skipping update.`);
+        logger.info(`[LTN Client] Document ${documentId} status is already ${statusByte}. Skipping update.`, { documentId, statusByte });
         const sigs = await this.client.connection.getSignaturesForAddress(pda, { limit: 1 });
         if (sigs.length > 0) {
           return sigs[0].signature;
@@ -3858,7 +3859,7 @@ export class DocumentProgramClient {
         baseDelayMs
       );
 
-      console.log(`[LTN Blockchain] Transaction confirmed. Signature: ${signature}`);
+      logger.info(`[LTN Blockchain] Transaction confirmed. Signature: ${signature}`, { signature });
       return signature;
     } catch (err: any) {
       if (!this.shouldFailover()) {

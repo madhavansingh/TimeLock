@@ -1,11 +1,11 @@
 {
-  "name": "my-v0-project",
+  "name": "@timelock/frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "build": "next build",
     "dev": "next dev -H 0.0.0.0",
-    "lint": "eslint .",
+    "lint": "tsc --noEmit",
     "start": "next start"
   },
   "dependencies": {
@@ -46,10 +46,6 @@
     "cmdk": "1.0.4",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.5.1",
-    "expo": "latest",
-    "expo-asset": "latest",
-    "expo-file-system": "latest",
-    "expo-gl": "latest",
     "geist": "1.7.0",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
@@ -59,7 +55,6 @@
     "react-day-picker": "9.8.0",
     "react-dom": "19.2.0",
     "react-hook-form": "^7.60.0",
-    "react-native": "latest",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.4",
     "sonner": "^1.7.4",
@@ -74,6 +69,8 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.0.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",

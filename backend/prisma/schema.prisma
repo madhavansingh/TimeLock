@@ -10,6 +10,7 @@ datasource db {
 
 model User {
   userId             String              @id @default(uuid()) @map("user_id")
+  tenantId           String?             @map("tenant_id")
   role               DbUserRole
   name               String?
   email              String              @unique @default("")
@@ -17,7 +18,13 @@ model User {
   phoneHash          String              @default("") @map("phone_hash")
   emailHash          String              @default("") @map("email_hash")
   notaryId           String?             @map("notary_id")
+  securityClearance  DataClassification  @default(INTERNAL) @map("security_clearance")
+  residencyCountry   String              @default("IN") @map("residency_country")
+  residencyState     String              @default("MH") @map("residency_state")
+  residencyDistrict  String              @default("PUNE") @map("residency_district")
+  
   notary             Notary?             @relation(fields: [notaryId], references: [notaryId], onDelete: SetNull)
+  tenant             Tenant?             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
   documents          Document[]
   verificationEvents VerificationEvent[]
   ownershipRecords   OwnershipRecord[]
@@ -27,11 +34,15 @@ model User {
 
 model Document {
   documentId         String              @id @default(uuid()) @map("document_id")
+  tenantId           String?             @map("tenant_id")
   title              String
   type               String
   contentHash        String              @map("content_hash")
   merkleRoot         String?             @map("merkle_root")
   status             DbDocumentStatus    @default(PENDING)
+  classification     DataClassification  @default(INTERNAL)
+  classificationMetadata Json?           @map("classification_metadata")
+  residencyMetadata  Json?               @map("residency_metadata")
   onchainTxSignature String?             @map("onchain_tx_signature")
   onchainPda         String?             @map("onchain_pda")
   ownerUserId        String              @map("owner_user_id")
@@ -42,6 +53,7 @@ model Document {
   assignmentTimestamp DateTime?          @map("assignment_timestamp")
 
   owner              User                @relation(fields: [ownerUserId], references: [userId], onDelete: Cascade)
+  tenant             Tenant?             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
   assignedNotary     Notary?             @relation(fields: [assignedNotaryId], references: [notaryId], onDelete: SetNull)
   signatures         Signature[]
   verificationEvents VerificationEvent[]
@@ -58,6 +70,8 @@ model Document {
   ownershipRecords   OwnershipRecord[]
   evidenceRecommendations EvidenceRecommendation[]
   payment            Payment?
+  uploadReceipt      UploadReceipt?
+  digitalTwin        DigitalTwin?
 
   @@index([status, createdAt])
   @@index([ownerUserId])
@@ -646,3 +660,765 @@ enum PaymentStatus {
   SUCCESS
   FAILED
 }
+
+enum ValidationStatus {
+  PASSED
+  FAILED
+}
+
+enum HashAlgorithm {
+  SHA256
+  SHA3
+  BLAKE3
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model UploadReceipt {
+  receiptId             String           @id @default(uuid()) @map("receipt_id")
+  documentId            String           @unique @map("document_id")
+  uploadSessionId       String           @map("upload_session_id")
+  clientHash            String           @map("client_hash")
+  serverHash            String           @map("server_hash")
+  receiptHash           String           @map("receipt_hash")
+  receiptBlockchainTx   String?          @map("receipt_blockchain_tx")
+  receiptPda            String?          @map("receipt_pda")
+  receiptAnchoredAt     DateTime?        @map("receipt_anchored_at")
+  validationStatus      ValidationStatus @map("validation_status")
+  validationDurationMs  Int              @map("validation_duration_ms")
+  hashAlgorithm         HashAlgorithm    @default(SHA256) @map("hash_algorithm")
+  uploadTimestamp       DateTime         @map("upload_timestamp")
+  verificationTimestamp DateTime         @default(now()) @map("verification_timestamp")
+  frontendVersion       String           @map("frontend_version")
+  backendVersion        String           @map("backend_version")
+  apiVersion            String           @map("api_version")
+  clientMetadata        Json             @map("client_metadata")
+  receiptVersion        Int              @default(1) @map("receipt_version")
+
+  document              Document         @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+
+  @@map("upload_receipts")
+}
+
+model SecurityIncident {
+  incidentId         String           @id @default(uuid()) @map("incident_id")
+  tenantId           String?          @map("tenant_id")
+  severity           IncidentSeverity @map("severity")
+  requestId          String?          @map("request_id")
+  documentId         String?          @map("document_id")
+  timestamp          DateTime         @default(now()) @map("timestamp")
+  failureReason      String           @map("failure_reason")
+  sourceIpHash       String           @map("source_ip_hash")
+  headers            Json             @map("headers")
+  correlationId      String           @map("correlation_id")
+  resolutionStatus   String           @default("OPEN") @map("resolution_status")
+  metadata           Json?            @map("metadata")
+
+  tenant             Tenant?          @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@index([severity, timestamp])
+  @@index([correlationId])
+  @@map("security_incidents")
+}
+
+model DigitalTwin {
+  twinId               String               @id @default(uuid()) @map("twin_id")
+  tenantId             String?              @map("tenant_id")
+  documentId           String?              @unique @map("document_id")
+  twinType             TwinType             @default(PROPERTY) @map("twin_type")
+  stateHash            String               @default("") @map("state_hash")
+  twinState            Json                 @default("{}") @map("twin_state")
+  provenanceId         String?              @map("provenance_id")
+  version              Int                  @default(1)
+  passportScore        Int                  @default(0) @map("passport_score")
+  passportStatus       String               @default("INCOMPLETE") @map("passport_status")
+  passportData         Json                 @map("passport_data")
+  verificationHistory  Json                 @map("verification_history")
+  ownershipHistory     Json                 @map("ownership_history")
+  registryConsistency  Json                 @map("registry_consistency")
+  blockchainIntegrity  Json                 @map("blockchain_integrity")
+  evidenceCompleteness Json                 @map("evidence_completeness")
+  aiAssessments        Json                 @map("ai_assessments")
+  riskEvolution        Json                 @map("risk_evolution")
+  legalLifecycle       Json                 @map("legal_lifecycle")
+  targetId             String?              @map("target_id")
+  futureStatePredictions Json?              @map("future_state_predictions")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  tenant               Tenant?              @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+  document             Document?            @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  history              DigitalTwinHistory[]
+
+  @@map("digital_twins")
+}
+
+model DigitalTwinHistory {
+  id                   String               @id @default(uuid()) @map("id")
+  twinId               String               @map("twin_id")
+  documentId           String?              @map("document_id")
+  twinType             TwinType             @default(PROPERTY) @map("twin_type")
+  stateHash            String               @default("") @map("state_hash")
+  twinState            Json                 @default("{}") @map("twin_state")
+  provenanceId         String?              @map("provenance_id")
+  version              Int
+  passportScore        Int                  @map("passport_score")
+  passportStatus       String               @map("passport_status")
+  passportData         Json                 @map("passport_data")
+  verificationHistory  Json                 @map("verification_history")
+  ownershipHistory     Json                 @map("ownership_history")
+  registryConsistency  Json                 @map("registry_consistency")
+  blockchainIntegrity  Json                 @map("blockchain_integrity")
+  evidenceCompleteness Json                 @map("evidence_completeness")
+  aiAssessments        Json                 @map("ai_assessments")
+  riskEvolution        Json                 @map("risk_evolution")
+  legalLifecycle       Json                 @map("legal_lifecycle")
+  targetId             String?              @map("target_id")
+  futureStatePredictions Json?              @map("future_state_predictions")
+  triggerEvent         String               @map("trigger_event")
+  createdAt            DateTime             @default(now()) @map("created_at")
+
+  twin                 DigitalTwin          @relation(fields: [twinId], references: [twinId], onDelete: Cascade)
+
+  @@map("digital_twin_histories")
+}
+
+// Upgraded Transactional Outbox supporting prioritization, expiry, and ordering
+model OutboxEvent {
+  id             String    @id @default(uuid()) @map("id")
+  eventType      String    @map("event_type")
+  eventVersion   Int       @default(1) @map("event_version")
+  payload        Json      // Always in Canonical format
+  correlationId  String?   @map("correlation_id")
+  traceId        String?   @map("trace_id")
+  status         String    @default("PENDING") // PENDING, PROCESSED, POISON, EXPIRED, FAILED
+  attempts       Int       @default(0)
+  priority       Int       @default(0)
+  sequenceNumber Int       @default(0) @map("sequence_number")
+  expiresAt      DateTime? @map("expires_at")
+  lastError      String?   @map("last_error")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  processedAt    DateTime? @map("processed_at")
+
+  @@index([status, createdAt])
+  @@index([correlationId])
+  @@map("outbox_events")
+}
+
+// Cryptographically audited external interaction log with request provenance
+model IntegrationAudit {
+  id                  String   @id @default(uuid()) @map("id")
+  connectorName       String   @map("connector_name")
+  endpoint            String
+  correlationId       String?  @map("correlation_id")
+  traceId             String?  @map("trace_id")
+  payloadHash         String   @map("payload_hash")
+  responseHash        String   @map("response_hash")
+  executionDurationMs Int      @map("execution_duration_ms")
+  retryCount          Int      @map("retry_count")
+  result              String   @map("result") // SUCCESS, FAILED
+  errorReason         String?  @map("error_reason")
+  provenance          Json?    // Stores signatures, nonce, and timestamp validations
+  timestamp           DateTime @default(now()) @map("timestamp")
+  operatorId          String?  @map("operator_id")
+
+  @@index([connectorName, timestamp])
+  @@index([correlationId])
+  @@map("integration_audits")
+}
+
+// Federated identity mapping (Government IDs, Bank IDs, Corporate SSO)
+model FederatedIdentity {
+  id          String    @id @default(uuid()) @map("id")
+  userId      String    @map("user_id")
+  provider    String    // GOV_ID, BANK_ID, CORPORATE_ID, DIGITAL_CERT
+  externalId  String    @map("external_id")
+  metadata    Json
+  verifiedAt  DateTime? @map("verified_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([provider, externalId])
+  @@map("federated_identities")
+}
+
+// Active connector configuration, capabilities, and operational governance
+model ConnectorConfig {
+  id                  String    @id @default(uuid()) @map("id")
+  tenantId            String?   @map("tenant_id")
+  name                String    @unique // e.g. LAND_REGISTRY, COURT_SYSTEM
+  type                String    // REGISTRY, IDENTITY, PAYMENT, STORAGE, COURT, BANK, INSURANCE, NOTIFICATION
+  lifecycleState      String    @default("REGISTERED") @map("lifecycle_state") // REGISTERED, INITIALIZING, ACTIVE, DEGRADED, SUSPENDED, OFFLINE, DEPRECATED, RETIRED
+  version             String    @default("1.0.0")
+  endpoint            String
+  authType            String    @map("auth_type") // HMAC, MUTUAL_TLS, API_KEY
+  authConfig          Json      @map("auth_config")
+  retryPolicy         Json      @map("retry_policy")
+  timeoutMs           Int       @default(30000) @map("timeout_ms")
+  capabilities        Json      // Supported operations, events, resources
+  owner               String    // Governance: Owner name/email
+  approvalStatus      String    @default("PENDING_REVIEW") @map("approval_status") // APPROVED, PENDING_REVIEW, REJECTED
+  securityReviewDate  DateTime? @map("security_review_date")
+  complianceStatus    String    @default("COMPLIANT") @map("compliance_status") // COMPLIANT, NON_COMPLIANT
+  deploymentHistory   Json      // Array of version deployment logs
+  deprecationSchedule DateTime? @map("deprecation_schedule")
+  status              String    @default("HEALTHY") // HEALTHY, WARNING, DEGRADED, OFFLINE
+  lastSyncAt          DateTime? @map("last_sync_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  tenant              Tenant?   @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@map("connector_configs")
+}
+
+// Versioned JSON schema registry entries for payload validations
+model SchemaRegistryEntry {
+  id               String   @id @default(uuid()) @map("id")
+  schemaName       String   @map("schema_name")
+  version          Int
+  schemaDefinition Json     @map("schema_definition")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([schemaName, version])
+  @@map("schema_registry")
+}
+
+// State machine tracker for orchestrated workflows
+model WorkflowExecution {
+  id            String   @id @default(uuid()) @map("id")
+  workflowName  String   @map("workflow_name")
+  status        String   @default("RUNNING") // RUNNING, COMPLETED, FAILED, SUSPENDED_APPROVAL
+  currentStep   String   @map("current_step")
+  context       Json     // Workflow state variables
+  stepsHistory  Json     @map("steps_history") // Steps executed, timestamps, results, rollbacks
+  correlationId String?  @map("correlation_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@map("workflow_executions")
+}
+
+// Synchronization delta checkpoints
+model SyncCheckpoint {
+  id                  String   @id @default(uuid()) @map("id")
+  connectorName       String   @map("connector_name")
+  entityType          String   @map("entity_type")
+  lastSyncedTimestamp DateTime @map("last_synced_timestamp")
+  lastSyncedVersion   Int      @map("last_synced_version")
+  checksum            String
+  dataLineage         Json     @map("data_lineage")
+
+  @@unique([connectorName, entityType])
+  @@map("sync_checkpoints")
+}
+
+// =============================================================================
+// NEW MODELS — GOVERNMENT CLOUD PLATFORM (GCPX)
+// =============================================================================
+
+enum DataClassification {
+  PUBLIC
+  INTERNAL
+  COMMERCIAL_CONFIDENTIAL
+  CONFIDENTIAL
+  SECRET
+  TOP_SECRET
+}
+
+enum TwinType {
+  CITIZEN
+  PROPERTY
+  NOTARY
+  REGISTRAR
+  COURT
+  ORGANIZATION
+  DISTRICT
+  AGENCY
+  PLATFORM
+}
+
+model Tenant {
+  tenantId             String             @id @default(uuid()) @map("tenant_id")
+  name                 String             @unique
+  type                 TenantType
+  brandingConfig       Json               @map("branding_config")
+  aiPolicies           Json               @map("ai_policies")
+  securityPolicies     Json               @map("security_policies")
+  auditPolicies        Json               @map("audit_policies")
+  storageQuotaBytes    BigInt             @default(10737418240) @map("storage_quota_bytes")
+  storageUsedBytes     BigInt             @default(0) @map("storage_used_bytes")
+  country              String             @default("IN")
+  state                String             @default("MH")
+  district             String             @default("PUNE")
+  storageZone          String             @default("zone-west-1") @map("storage_zone")
+  backupRegion         String             @default("zone-south-1") @map("backup_region")
+  retentionJurisdiction String            @default("IN-MH-PUNE") @map("retention_jurisdiction")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  // Relations
+  users                User[]
+  documents            Document[]
+  connectorConfigs     ConnectorConfig[]
+  complianceRecords    ComplianceRecord[]
+  scheduledJobs        ScheduledJob[]
+  apiClients           ApiClient[]
+  configKeys           ConfigKey[]
+  policyRules          PolicyRule[]
+  securityIncidents    SecurityIncident[]
+  featureFlags         FeatureFlag[]
+  costMetrics          CostMetric[]
+  capacityMetrics      CapacityMetric[]
+  policySimulations    PolicySimulation[]
+  digitalTwins         DigitalTwin[]
+  policyEvaluationLogs PolicyEvaluationLog[]
+  hitlActions          HitlAction[]
+  aiCostMetrics        AiCostMetric[]
+  executiveBriefings   ExecutiveBriefing[]
+  feedbackLearningDatasets FeedbackLearningDataset[]
+  simulationResults    SimulationResult[]
+  intelligenceInsights IntelligenceInsight[]
+
+  @@map("tenants")
+}
+
+enum TenantType {
+  STATE_GOV
+  DISTRICT_REGISTRAR
+  MUNICIPAL_CORPORATION
+  BANK
+  COURT
+  INSURANCE_COMPANY
+  ENTERPRISE
+}
+
+model PolicyRule {
+  ruleId          String             @id @default(uuid()) @map("rule_id")
+  tenantId        String             @map("tenant_id")
+  name            String
+  description     String
+  effect          String             // ALLOW, DENY
+  actions         String[]           // e.g. ["document:read", "document:sign"]
+  classifications DataClassification[] @map("classifications")
+  conditions      Json               // ABAC parameters
+  isActive        Boolean            @default(true) @map("is_active")
+  version         Int                @default(1)
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  tenant          Tenant             @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@map("policy_rules")
+}
+
+model PolicyDelegation {
+  delegationId    String    @id @default(uuid()) @map("delegation_id")
+  delegatorUserId String    @map("delegator_user_id")
+  delegateUserId  String    @map("delegate_user_id")
+  actions         String[]
+  scopeConditions Json      @map("scope_conditions")
+  expiresAt       DateTime  @map("expires_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  isRevoked       Boolean   @default(false) @map("is_revoked")
+
+  @@map("policy_delegations")
+}
+
+model ComplianceRecord {
+  recordId             String    @id @default(uuid()) @map("record_id")
+  tenantId             String    @map("tenant_id")
+  complianceScore      Int       @map("compliance_score")
+  auditCompleteness    Int       @map("audit_completeness")
+  retentionScore       Int       @map("retention_score")
+  blockchainTrustScore Int       @map("blockchain_trust_score")
+  aiExplainabilityScore Int      @map("ai_explainability_score")
+  privacyCompliance    Int       @map("privacy_compliance")
+  metricsSnapshot      Json      @map("metrics_snapshot")
+  timestamp            DateTime  @default(now())
+
+  tenant               Tenant    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@map("compliance_records")
+}
+
+model ArchivalLog {
+  logId              String    @id @default(uuid()) @map("log_id")
+  documentId         String    @map("document_id")
+  previousState      String    @map("previous_state")
+  newState           String    @map("new_state")
+  reason             String
+  snapshotHash       String    @map("snapshot_hash")
+  snapshotStorageUrl String    @map("snapshot_storage_url")
+  operatorUserId     String    @map("operator_user_id")
+  timestamp          DateTime  @default(now())
+
+  @@map("archival_logs")
+}
+
+model VersionGovernanceRegistry {
+  registryId               String   @id @default(uuid()) @map("registry_id")
+  platformVersion          String   @map("platform_version")
+  schemaVersion            String   @map("schema_version")
+  prismaClientVersion      String   @map("prisma_client_version")
+  aiModelVersion           String   @map("ai_model_version")
+  promptVersion            String   @map("prompt_version")
+  blockchainProgramVersion String   @map("blockchain_program_version")
+  smartContractVersion     String   @map("smart_contract_version")
+  connectorContractVersion String   @map("connector_contract_version")
+  apiVersion               String   @map("api_version")
+  featureFlagVersion       String   @map("feature_flag_version")
+  compliancePolicyVersion  String   @map("compliance_policy_version")
+  securityPolicyVersion    String   @map("security_policy_version")
+  hash                     String   @unique
+  timestamp                DateTime @default(now())
+
+  @@map("version_governance_registries")
+}
+
+model PolicyEvaluationLog {
+  evaluationId     String   @id @default(uuid()) @map("evaluation_id")
+  tenantId         String?  @map("tenant_id")
+  requestId        String?  @map("request_id")
+  correlationId    String?  @map("correlation_id")
+  userId           String?  @map("user_id")
+  action           String
+  resourceId       String?  @map("resource_id")
+  resourceType     String?  @map("resource_type")
+  decision         String   // ALLOW, DENY
+  policyVersion    String   @map("policy_version")
+  matchingRules    String[] @map("matching_rules")
+  deniedRules      String[] @map("denied_rules")
+  evaluationTimeMs Int      @map("evaluation_time_ms")
+  reason           String?
+  timestamp        DateTime @default(now())
+
+  tenant           Tenant?  @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@index([tenantId, timestamp])
+  @@map("policy_evaluation_logs")
+}
+
+model FeatureFlag {
+  flagId         String   @id @default(uuid()) @map("flag_id")
+  tenantId       String   @map("tenant_id")
+  name           String
+  description    String
+  isEnabled      Boolean  @default(false) @map("is_enabled")
+  rules          Json     // Targets, rollout rates, environment overrides
+  lastModifiedBy String   @map("last_modified_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@map("feature_flags")
+}
+
+model SecretRotationJob {
+  jobId          String    @id @default(uuid()) @map("job_id")
+  secretName     String    @map("secret_name")
+  secretType     String    @map("secret_type") // TLS_CERT, CONNECTOR_CRED, BLOCKCHAIN_KEY, ENCRYPTION_KEY
+  status         String    // PENDING, IN_PROGRESS, COMPLETED, FAILED
+  lastRotatedAt  DateTime  @default(now()) @map("last_rotated_at")
+  nextRotationAt DateTime  @map("next_rotation_at")
+  errorMessage   String?   @map("error_message")
+
+  @@map("secret_rotation_jobs")
+}
+
+model ScheduledJob {
+  jobId          String    @id @default(uuid()) @map("job_id")
+  tenantId       String    @map("tenant_id")
+  name           String
+  taskType       String    @map("task_type") // BACKUP, RETENTION, SYNC, COMPLIANCE, HEAL
+  cronExpression String    @map("cron_expression")
+  status         String    @default("ACTIVE") // ACTIVE, PAUSED, RUNNING
+  lastRunAt      DateTime? @map("last_run_at")
+  nextRunAt      DateTime? @map("next_run_at")
+  runHistory     Json      @default("[]") @map("run_history")
+
+  tenant         Tenant    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@map("scheduled_jobs")
+}
+
+model CostMetric {
+  metricId       String   @id @default(uuid()) @map("metric_id")
+  tenantId       String   @map("tenant_id")
+  resourceType   String   @map("resource_type") // AI_TOKEN, GPU_TIME, STORAGE_BYTES, BANDWIDTH, BLOCKCHAIN_GAS, NOTIFICATION
+  costAmountUsd  Decimal  @map("cost_amount_usd") @db.Decimal(18, 6)
+  resourceQuantity Decimal @map("resource_quantity") @db.Decimal(18, 6)
+  documentId     String?  @map("document_id")
+  timestamp      DateTime @default(now())
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@index([tenantId, timestamp])
+  @@map("cost_metrics")
+}
+
+model CapacityMetric {
+  metricId       String   @id @default(uuid()) @map("metric_id")
+  tenantId       String   @map("tenant_id")
+  metricName     String   @map("metric_name") // DATABASE_GROWTH, STORAGE_GROWTH, TPS, CONCURRENT_USERS, AI_THROUGHPUT, QUEUE_DEPTH
+  metricValue    Decimal  @map("metric_value") @db.Decimal(18, 6)
+  timestamp      DateTime @default(now())
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@index([tenantId, timestamp])
+  @@map("capacity_metrics")
+}
+
+model PolicySimulation {
+  simulationId   String   @id @default(uuid()) @map("simulation_id")
+  tenantId       String   @map("tenant_id")
+  stagedPolicy   Json     @map("staged_policy")
+  transactionsRun Int     @map("transactions_run")
+  blockedDelta    Int     @map("blocked_delta")
+  allowedDelta    Int     @map("allowed_delta")
+  impactReport   Json     @map("impact_report")
+  createdBy      String   @map("created_by")
+  timestamp      DateTime @default(now())
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@map("policy_simulations")
+}
+
+model AiDecisionAudit {
+  decisionId         String   @id @default(uuid()) @map("decision_id")
+  documentId         String   @map("document_id")
+  promptHash         String   @map("prompt_hash")
+  promptVersion      String   @map("prompt_version")
+  modelName          String   @map("model_name")
+  modelHash          String   @map("model_hash")
+  confidenceScore    Decimal  @map("confidence_score") @db.Decimal(5, 4)
+  hallucinationScore Decimal  @map("hallucination_score") @db.Decimal(5, 4)
+  biasIndicators     Json     @map("bias_indicators")
+  isOverridden       Boolean  @default(false) @map("is_overridden")
+  overrideUserId     String?  @map("override_user_id")
+  reproducibilitySeed Int     @map("reproducibility_seed")
+  reproducibilityMeta Json     @map("reproducibility_meta")
+  inferenceLatencyMs Int      @map("inference_latency_ms")
+  inferenceCostUsd   Decimal  @map("inference_cost_usd") @db.Decimal(18, 6)
+  datasetVersion     String   @map("dataset_version")
+  timestamp          DateTime @default(now())
+
+  @@map("ai_decision_audits")
+}
+
+model LineageNode {
+  nodeId            String   @id @default(uuid()) @map("node_id")
+  entityId          String   @map("entity_id") // e.g. documentId
+  entityType        String   @map("entity_type")
+  action            String   // CREATE, MODIFY, SIGN, SYNC, TRANSFER
+  payloadHash       String   @map("payload_hash")
+  operatorUserId    String?  @map("operator_user_id")
+  blockchainTxHash  String?  @map("blockchain_tx_hash")
+  connectorName     String?  @map("connector_name")
+  aiModelDetails    String?  @map("ai_model_details")
+  governingPolicyId String?  @map("governing_policy_id")
+  parentHashes      String[] @map("parent_hashes")
+  timestamp         DateTime @default(now())
+
+  @@index([entityId])
+  @@map("lineage_nodes")
+}
+
+model ApiClient {
+  clientId     String    @id @default(uuid()) @map("client_id")
+  tenantId     String    @map("tenant_id")
+  name         String
+  apiKeyHash   String    @unique @map("api_key_hash")
+  scope        String[]
+  rateLimitPpm Int       @default(60) @map("rate_limit_ppm")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@map("api_clients")
+}
+
+model ConfigKey {
+  keyId        String    @id @default(uuid()) @map("key_id")
+  tenantId     String    @map("tenant_id")
+  name         String
+  value        String
+  description  String
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@map("config_keys")
+}
+
+// =============================================================================
+// AGIP SCHEMAS — ENTERPRISE AI GOVERNANCE & OBSERVED METRICS
+// =============================================================================
+
+model AiModelRegistry {
+  registryId       String   @id @default(uuid()) @map("registry_id")
+  agentName        String   @map("agent_name")
+  modelVersion     String   @map("model_version")
+  promptVersion    String   @map("prompt_version")
+  rolloutPercentage Int     @default(0) @map("rollout_percentage")
+  isActive         Boolean  @default(false) @map("is_active")
+  rollbackSupported Boolean @default(true) @map("rollback_supported")
+  evaluationMetrics Json    @map("evaluation_metrics")
+  status           String   @default("STAGED")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([agentName, modelVersion, promptVersion])
+  @@map("ai_model_registries")
+}
+
+model DecisionProvenance {
+  provenanceId       String   @id @default(uuid()) @map("provenance_id")
+  targetId           String   @map("target_id")
+  targetType         String   @map("target_type")
+  decisionType       String   @map("decision_type")
+  contributingAgents String[] @map("contributing_agents")
+  dataSources        String[] @map("data_sources")
+  evidenceReferences String[] @map("evidence_references")
+  appliedPolicyRules String[] @map("applied_policy_rules")
+  confidenceVector   Json     @map("confidence_vector")
+  modelVersion       String   @map("model_version")
+  executionTimeMs    Int      @map("execution_time_ms")
+  signature          String   @default("")
+  onchainTxSignature String?  @map("onchain_tx_signature")
+  timestamp          DateTime @default(now())
+
+  @@index([targetId, decisionType])
+  @@map("decision_provenances")
+}
+
+model HitlAction {
+  actionId         String   @id @default(uuid()) @map("action_id")
+  tenantId         String?  @map("tenant_id")
+  targetId         String   @map("target_id")
+  targetType       String   @map("target_type")
+  originalState    Json     @map("original_state")
+  proposedState    Json     @map("proposed_state")
+  workflowStatus   String   @default("PENDING_HUMAN_REVIEW")
+  assignedRole     String   @map("assigned_role")
+  reviewedBy       String?  @map("reviewed_by")
+  overrideRationale String? @map("override_rationale")
+  executionTimestamp DateTime? @map("execution_timestamp")
+  timestamp        DateTime @default(now())
+
+  tenant           Tenant?  @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@index([workflowStatus])
+  @@map("hitl_actions")
+}
+
+model ContinuousEvaluationLog {
+  evaluationId     String   @id @default(uuid()) @map("evaluation_id")
+  agentName        String   @map("agent_name")
+  precision        Float
+  recall           Float
+  falsePositiveRate Float   @map("false_positive_rate")
+  falseNegativeRate Float   @map("false_negative_rate")
+  latencyMs        Int      @map("latency_ms")
+  driftScore       Float    @map("drift_score")
+  calibrationScore Float    @map("calibration_score")
+  anomalyCount     Int      @default(0) @map("anomaly_count")
+  timestamp        DateTime @default(now())
+
+  @@index([agentName, timestamp])
+  @@map("continuous_evaluation_logs")
+}
+
+model AiCostMetric {
+  metricId         String   @id @default(uuid()) @map("metric_id")
+  tenantId         String?  @map("tenant_id")
+  agentName        String   @map("agent_name")
+  documentId       String?  @map("document_id")
+  promptTokens     Int      @map("prompt_tokens")
+  completionTokens Int      @map("completion_tokens")
+  inferenceTimeMs  Int      @map("inference_time_ms")
+  gpuUtilization   Float    @map("gpu_utilization")
+  estimatedCost    Float    @map("estimated_cost")
+  timestamp        DateTime @default(now())
+
+  tenant           Tenant?  @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@index([tenantId, agentName])
+  @@map("ai_cost_metrics")
+}
+
+model ExecutiveBriefing {
+  briefingId       String   @id @default(uuid()) @map("briefing_id")
+  tenantId         String?  @map("tenant_id")
+  scope            String
+  briefingContent  Json     @map("briefing_content")
+  generatedBy      String   @map("generated_by")
+  timestamp        DateTime @default(now())
+
+  tenant           Tenant?  @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@map("executive_briefings")
+}
+
+model FeedbackLearningDataset {
+  feedbackId       String   @id @default(uuid()) @map("feedback_id")
+  tenantId         String?  @map("tenant_id")
+  sourceType       String   @map("source_type")
+  sourceId         String   @map("source_id")
+  features         Json     @map("features")
+  label            Json     @map("label")
+  notes            String?  @map("notes")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant           Tenant?  @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@index([sourceType])
+  @@map("feedback_learning_datasets")
+}
+
+model SimulationResult {
+  simulationId     String   @id @default(uuid()) @map("simulation_id")
+  tenantId         String?  @map("tenant_id")
+  name             String
+  scenarios        Json
+  impactReport     Json     @map("impact_report")
+  runBy            String   @map("run_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant           Tenant?  @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@map("simulation_results")
+}
+
+model IntelligenceInsight {
+  insightId          String   @id @default(uuid()) @map("insight_id")
+  tenantId           String?  @map("tenant_id")
+  type               String
+  targetId           String?  @map("target_id")
+  prediction         Json
+  recommendedActions String[] @map("recommended_actions")
+  status             String   @default("ACTIVE")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  tenant           Tenant?  @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("intelligence_insights")
+}
+
+
+

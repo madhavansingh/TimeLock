@@ -26,19 +26,19 @@ services:
     ports:
       - "5001:5001"
     environment:
-      - PORT=5001
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/timelock?schema=public
-      - JWT_SECRET=ltn_hackathon_jwt_secret_2026_kleos_super_secure_key
-      - PINATA_API_KEY=mock_pinata_api_key
-      - PINATA_SECRET=mock_pinata_api_secret
-      - PINATA_JWT=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiIxZmI1NTQ1Mi00YzU1LTQ5MDMtYTIxMC00YmZlNWFlN2U0OTciLCJlbWFpbCI6ImRpdnlhbnNodWt1YmRlOEBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGluX3BvbGljeSI6eyJyZWdpb25zIjpbeyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJGUkExIn0seyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJOWUMxIn1dLCJ2ZXJzaW9uIjoxfSwibWZhX2VuYWJsZWQiOmZhbHNlLCJzdGF0dXMiOiJBQ1RJVkUifSwiYXV0aGVudGljYXRpb25UeXBlIjoic2NvcGVkS2V5Iiwic2NvcGVkS2V5S2V5IjoiYTk4MjBmNGZjZmNiMjk3YmVkY2AiLCJzY29wZWRLZXlTZWNyZXQiOiI0NjVjMzA1ZmMwOTRhYzA0MjJkODEwNTc1ODM4ZGRlNTY3NDJkOWE4NTg5NTNmZGUyNTg4ODAyODM0YTBkOWY1IiwiZXhwIjoxODEzMzk4Mjk4fQ.gyNDD3OkTU1w5QH3y7IjziMp7AFdmh3e4NBzbV7LOaw
-      - PINATA_GATEWAY=silver-acceptable-bandicoot-606.mypinata.cloud
-      - SOLANA_RPC_URL=https://api.devnet.solana.com
-      - SOLANA_RELAYER_PRIVATE_KEY=[86,59,173,247,107,158,10,62,76,251,119,90,136,134,222,30,70,194,226,102,95,83,171,168,223,92,82,147,6,71,20,160,75,83,28,120,53,129,227,242,89,139,147,81,209,115,178,212,113,217,233,246,202,244,167,102,102,231,26,81,113,168,202,220]
-      - CLIENT_URL=http://10.131.235.84:3000
-      - PUBLIC_APP_URL=http://10.131.235.84:3000
-      - FRONTEND_URL=http://10.131.235.84:3000
-      - NODE_ENV=production
+      - PORT=${PORT:-5001}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/timelock?schema=public}
+      - JWT_SECRET=${JWT_SECRET}
+      - PINATA_API_KEY=${PINATA_API_KEY}
+      - PINATA_SECRET=${PINATA_SECRET}
+      - PINATA_JWT=${PINATA_JWT}
+      - PINATA_GATEWAY=${PINATA_GATEWAY}
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      - SOLANA_RELAYER_PRIVATE_KEY=${SOLANA_RELAYER_PRIVATE_KEY}
+      - CLIENT_URL=${CLIENT_URL:-http://localhost:3000}
+      - PUBLIC_APP_URL=${PUBLIC_APP_URL:-http://localhost:3000}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - NODE_ENV=${NODE_ENV:-production}
     depends_on:
       db:
         condition: service_healthy
@@ -52,7 +52,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://10.131.235.84:5001/v1
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5001/v1}
     depends_on:
       - backend
     restart: always

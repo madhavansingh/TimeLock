@@ -2,6 +2,8 @@ import * as crypto from 'crypto';
 import { logger } from '../../config/logger';
 import { AIServiceError } from '../../config/errors';
 import { getNvidiaApiKey } from '../../config/context';
+import { ResilienceService } from '../resilience.service';
+import { ProductionHealthService } from '../production-health.service';
 
 export interface NemotronRequest {
   systemPrompt: string;
@@ -37,12 +39,71 @@ export class NemotronService {
       throw new AIServiceError('NVIDIA Nemotron API key is not configured or is invalid. Please configure NVIDIA_API_KEY in the environment to perform AI analysis.');
     }
 
-    // 2. Call NVIDIA API with Retries and Timeout protection
+    // 2. Call NVIDIA API with Retries, Timeout, and Circuit Breaker protection
+    const startTime = Date.now();
     try {
-      const result = await this.executeWithRetryAndTimeout(systemPrompt, userPrompt);
+      const result = await ResilienceService.execute(
+        'NVIDIA_NEMOTRON',
+        () => this.executeWithRetryAndTimeout(systemPrompt, userPrompt),
+        [],
+        { failureThreshold: 3, cooldownMs: 10000, timeoutMs: 45000 },
+        fallbackGenerator
+      );
+
       this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+      // Telemetry: Estimate token count (1 token = 4 characters) and identify agent
+      const inputChars = systemPrompt.length + userPrompt.length;
+      const outputChars = JSON.stringify(result).length;
+      const estimatedTokens = Math.round((inputChars + outputChars) / 4);
+
+      let agentName = 'DocumentLegalityAgent';
+      if (systemPrompt.includes('Legality')) agentName = 'DocumentLegalityAgent';
+      else if (systemPrompt.includes('Anomaly') || systemPrompt.includes('anomaly')) agentName = 'AnomalyAgent';
+      else if (systemPrompt.includes('Integrity') || systemPrompt.includes('integrity')) agentName = 'ChainIntegrityAgent';
+      else if (systemPrompt.includes('Conflict') || systemPrompt.includes('conflict')) agentName = 'ConflictInvestigatorAgent';
+      else if (systemPrompt.includes('Cross-Examination') || systemPrompt.includes('cross-examination')) agentName = 'CrossExaminationAgent';
+      else if (systemPrompt.includes('Decision') || systemPrompt.includes('decision')) agentName = 'DecisionCopilotAgent';
+      else if (systemPrompt.includes('Evidence') || systemPrompt.includes('evidence')) agentName = 'EvidenceRecommendationAgent';
+      else if (systemPrompt.includes('Fraud') || systemPrompt.includes('fraud')) agentName = 'FraudRiskAgent';
+      else if (systemPrompt.includes('National') || systemPrompt.includes('national')) agentName = 'NationalRiskAgent';
+      else if (systemPrompt.includes('Predictor') || systemPrompt.includes('predictor')) agentName = 'RegistrationPredictorAgent';
+      else if (systemPrompt.includes('Trust') || systemPrompt.includes('trust')) agentName = 'TrustScoreAgent';
+
+      const confidence = result.confidence ?? result.trustScore ?? result.score ?? 85;
+
+      ProductionHealthService.registerExecution('NVIDIA_NEMOTRON', Date.now() - startTime, true);
+      ProductionHealthService.registerAiAgentExecution(
+        agentName,
+        Date.now() - startTime,
+        true,
+        estimatedTokens,
+        confidence
+      );
+
       return result;
     } catch (err: any) {
+      ProductionHealthService.registerExecution('NVIDIA_NEMOTRON', Date.now() - startTime, false, err.message);
+
+      let agentName = 'DocumentLegalityAgent';
+      if (systemPrompt.includes('Legality')) agentName = 'DocumentLegalityAgent';
+      else if (systemPrompt.includes('Anomaly')) agentName = 'AnomalyAgent';
+      else if (systemPrompt.includes('Integrity')) agentName = 'ChainIntegrityAgent';
+      else if (systemPrompt.includes('Conflict')) agentName = 'ConflictInvestigatorAgent';
+      else if (systemPrompt.includes('Decision')) agentName = 'DecisionCopilotAgent';
+      else if (systemPrompt.includes('Evidence')) agentName = 'EvidenceRecommendationAgent';
+      else if (systemPrompt.includes('Fraud')) agentName = 'FraudRiskAgent';
+      else if (systemPrompt.includes('Trust')) agentName = 'TrustScoreAgent';
+
+      ProductionHealthService.registerAiAgentExecution(
+        agentName,
+        Date.now() - startTime,
+        false,
+        0,
+        0,
+        err.message
+      );
+
       logger.error(`[Nemotron Fatal] NVIDIA API call failed after retries: ${err.message}`);
       throw new AIServiceError(`NVIDIA Nemotron AI analysis failed: ${err.message}`, err);
     }

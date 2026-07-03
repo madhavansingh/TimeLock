@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, Lock, ArrowLeft, ArrowRight, CheckCircle2, ShieldAlert, Cpu, FileUp, QrCode, FileText, RefreshCw, CreditCard, Receipt, Loader2 } from 'lucide-react';
+import { AlertCircle, Lock, ArrowLeft, ArrowRight, CheckCircle2, ShieldAlert, Cpu, FileUp, QrCode, FileText, RefreshCw, CreditCard, Receipt, Loader2, Download, Check, Network, Server, Clock, FileCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { calculateSHA256 } from '@/lib/crypto';
@@ -67,6 +67,21 @@ export default function RegisterDocument() {
   const [notariesLoading, setNotariesLoading] = useState(true);
   const [notariesError, setNotariesError] = useState('');
 
+  // C3 (Cryptographic Chain of Custody) states
+  const [clientHash, setClientHash] = useState('');
+  const [isHashing, setIsHashing] = useState(false);
+  const [showIntegrityModal, setShowIntegrityModal] = useState(false);
+  const [uploadSessionId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return window.crypto.randomUUID();
+      } catch {
+        return 'session-' + Math.random().toString(36).substring(2, 15);
+      }
+    }
+    return 'session-uuid';
+  });
+
   // AI analysis states
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState(0);
@@ -97,6 +112,7 @@ export default function RegisterDocument() {
     status: string;
     onchainTxSignature: string;
     qrCode?: string;
+    uploadReceipt?: any;
   } | null>(null);
 
   const fetchNotaries = async () => {
@@ -132,6 +148,20 @@ export default function RegisterDocument() {
     fetchNotaries();
   }, [user, router]);
 
+  // Hash selected file immediately in the browser
+  const hashFile = async (selectedFile: File) => {
+    setIsHashing(true);
+    setClientHash('');
+    try {
+      const hash = await calculateSHA256(selectedFile);
+      setClientHash(hash);
+    } catch (err) {
+      console.error('Browser hashing failed:', err);
+    } finally {
+      setIsHashing(false);
+    }
+  };
+
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -148,13 +178,17 @@ export default function RegisterDocument() {
     setDragActive(false);
     
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
+      const selectedFile = e.dataTransfer.files[0];
+      setFile(selectedFile);
+      hashFile(selectedFile);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
+      hashFile(selectedFile);
     }
   };
 
@@ -165,7 +199,7 @@ export default function RegisterDocument() {
       return;
     }
     setErrorMsg('');
-    setPaymentStep('summary');
+    setShowIntegrityModal(true); // Intercept and show institutional confirmation dialog
   };
 
   const handleInitiateRazorpay = async () => {
@@ -247,16 +281,15 @@ export default function RegisterDocument() {
     try {
       if (!file) return;
       
-      // Step 10: Existing workflow continues
-      // * SHA-256 generation
-      const clientHash = await calculateSHA256(file);
+      // Compute / fetch final browser hash
+      const finalClientHash = clientHash || await calculateSHA256(file);
       setHashingProgress(false);
 
       const formData = new FormData();
       formData.append('file', file);
       formData.append('title', title);
       formData.append('type', type);
-      formData.append('clientHash', clientHash);
+      formData.append('clientHash', finalClientHash);
       formData.append('notaryId', notaryId);
       formData.append('requiredSigners', requiredSigners.toString());
       if (surveyNumber) formData.append('surveyNumber', surveyNumber);
@@ -264,6 +297,16 @@ export default function RegisterDocument() {
       if (registrationNumber) formData.append('registrationNumber', registrationNumber);
       if (ownerName) formData.append('ownerName', ownerName);
       formData.append('paymentId', verifiedPaymentId);
+
+      // C3 Provenance Metadata Payload
+      formData.append('uploadTimestamp', new Date().toISOString());
+      formData.append('uploadSessionId', uploadSessionId);
+      formData.append('algorithm', 'SHA256');
+      formData.append('frontendVersion', '1.0.0');
+      formData.append('browserTimezone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+      formData.append('browserUserAgent', navigator.userAgent || 'unknown');
+      formData.append('browserLanguage', navigator.language || 'en-US');
+      formData.append('clientVersion', 'Production');
 
       const res = await apiClient.postFormData('/documents', formData);
       if (!res.data) {
@@ -286,7 +329,8 @@ export default function RegisterDocument() {
         cid: docData.cid,
         status: docData.status,
         onchainTxSignature: docData.onchainTxSignature,
-        qrCode: qrBase64
+        qrCode: qrBase64,
+        uploadReceipt: docData.uploadReceipt
       };
 
       setRegisteredData(finalState);
@@ -302,6 +346,42 @@ export default function RegisterDocument() {
       } else {
         setErrorMsg(err.message || 'Registry creation failed. Solana devnet may be offline or lagging.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadReceiptPdf = async () => {
+    if (!registeredData?.documentId) return;
+    try {
+      setLoading(true);
+      const baseUrl = apiClient.getBaseUrl();
+      const url = `${baseUrl}/documents/${registeredData.documentId}/receipt/pdf`;
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download receipt PDF');
+      }
+      
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.href = blobUrl;
+      downloadAnchor.download = `${title.replace(/\s+/g, '_')}_upload_receipt.pdf`;
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      console.error('Error downloading receipt PDF:', err);
+      alert(err.message || 'Failed to download receipt PDF.');
     } finally {
       setLoading(false);
     }
@@ -557,6 +637,19 @@ export default function RegisterDocument() {
                           <div className="text-sm">
                             <p className="font-semibold text-foreground">{file.name}</p>
                             <p className="text-muted-foreground text-xs mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                            
+                            {isHashing ? (
+                              <div className="flex items-center justify-center gap-1.5 text-xs text-primary mt-2">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                <span>Generating local browser checksum...</span>
+                              </div>
+                            ) : clientHash ? (
+                              <div className="flex items-center justify-center gap-1 text-xs text-emerald-500 mt-2">
+                                <Check className="h-3 w-3" />
+                                <span>Fingerprint locked: {clientHash.substring(0, 12)}...</span>
+                              </div>
+                            ) : null}
+
                             <label
                               htmlFor="document-upload-input"
                               className="mt-2.5 inline-block text-xs text-muted-foreground hover:text-foreground underline cursor-pointer"
@@ -593,7 +686,7 @@ export default function RegisterDocument() {
                       </div>
                     )}
 
-                    <Button type="submit" disabled={loading} className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl shadow-md transition-all">
+                    <Button type="submit" disabled={loading || isHashing} className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl shadow-md transition-all">
                       <span className="flex items-center justify-center gap-1.5">
                         Proceed to Payment (₹10)
                         <ArrowRight className="h-4 w-4" />
@@ -653,7 +746,7 @@ export default function RegisterDocument() {
 
                   {/* Verification Fee Breakdown & Payment Summary */}
                   <div className="space-y-2.5">
-                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                     <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                       <Receipt className="h-3.5 w-3.5" />
                       <span>Payment Summary</span>
                     </div>
@@ -796,6 +889,81 @@ export default function RegisterDocument() {
                   </div>
                 </div>
 
+                {/* C3 Chain of Custody Timeline */}
+                <div className="space-y-4 border-t border-border pt-4">
+                  <span className="block text-muted-foreground text-xs font-bold tracking-wider uppercase mb-1">Cryptographic Chain of Custody (C3) Trail</span>
+                  <div className="relative border-l border-border pl-6 ml-3 space-y-6 text-sm">
+                    {/* Step 1: Browser Hashing */}
+                    <div className="relative">
+                      <div className="absolute -left-[31px] top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm ring-4 ring-background">
+                        <Check className="h-3 w-3" />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="font-semibold text-foreground text-xs block">1. Sovereign Browser Hashing</span>
+                        <p className="text-[11px] text-muted-foreground">Computed SHA-256 checksum locally in browser on file selection to guarantee absolute source integrity.</p>
+                        <span className="font-mono text-[10px] text-primary bg-primary/5 border border-primary/10 rounded px-1.5 py-0.5 block mt-1 select-all break-all">{registeredData?.uploadReceipt?.clientHash || registeredData?.hash}</span>
+                      </div>
+                    </div>
+
+                    {/* Step 2: Server Verification */}
+                    <div className="relative">
+                      <div className="absolute -left-[31px] top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm ring-4 ring-background">
+                        <Check className="h-3 w-3" />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="font-semibold text-foreground text-xs block">2. Dual-Hash Server Validation</span>
+                        <p className="text-[11px] text-muted-foreground">Backend re-hashed file and executed constant-time comparison. Match verified in {registeredData?.uploadReceipt?.validationDurationMs || 0}ms.</p>
+                        <span className="font-mono text-[10px] text-emerald-600 bg-emerald-500/5 border border-emerald-500/10 rounded px-1.5 py-0.5 block mt-1 select-all break-all">{registeredData?.uploadReceipt?.serverHash || registeredData?.hash}</span>
+                      </div>
+                    </div>
+
+                    {/* Step 3: Solana Anchoring */}
+                    <div className="relative">
+                      <div className="absolute -left-[31px] top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm ring-4 ring-background">
+                        <Check className="h-3 w-3" />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="font-semibold text-foreground text-xs block">3. Blockchain Consensus Anchor</span>
+                        <p className="text-[11px] text-muted-foreground">Anchored serialized receipt hash on Solana Devnet (Role Byte: 10) under derived PDA registry.</p>
+                        <span className="font-mono text-[10px] text-muted-foreground bg-accent/20 border border-border rounded px-1.5 py-0.5 block mt-1 select-all break-all">{registeredData?.uploadReceipt?.receiptPda || 'Anchored On Solana Program'}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Download Options Grid */}
+                <div className="grid grid-cols-2 gap-3 border-t border-border pt-4 mt-6">
+                  <Button 
+                    onClick={() => {
+                      if (!registeredData?.uploadReceipt) return;
+                      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(registeredData.uploadReceipt, null, 2));
+                      const downloadAnchor = document.createElement('a');
+                      downloadAnchor.setAttribute("href",     dataStr);
+                      downloadAnchor.setAttribute("download", `upload_receipt_${registeredData.documentId}.json`);
+                      document.body.appendChild(downloadAnchor);
+                      downloadAnchor.click();
+                      downloadAnchor.remove();
+                    }}
+                    disabled={!registeredData?.uploadReceipt || loading}
+                    className="h-11 border-border bg-transparent hover:bg-accent text-foreground border rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download JSON Receipt
+                  </Button>
+                  <Button 
+                    onClick={downloadReceiptPdf}
+                    disabled={!registeredData?.uploadReceipt || loading}
+                    className="h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-md"
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-primary-foreground" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                    Download PDF Receipt
+                  </Button>
+                </div>
+
                 {registeredData?.qrCode && (
                   <div className="flex flex-col items-center justify-center text-center p-4 rounded-xl border border-border bg-muted/20">
                     <img src={registeredData.qrCode} alt="Verification QR Code" className="w-40 h-40 border border-border bg-white p-2 rounded-lg" />
@@ -821,6 +989,78 @@ export default function RegisterDocument() {
           )}
         </div>
       </main>
+
+      {/* Confirm Document Integrity Modal Overlay */}
+      {showIntegrityModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <Card className="w-full max-w-lg border-border bg-card shadow-2xl rounded-2xl border overflow-hidden">
+            <CardHeader className="bg-primary/5 pb-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+                  <Cpu className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg font-bold text-foreground">Confirm Document Integrity</CardTitle>
+                  <CardDescription className="text-muted-foreground text-xs">Aadhaar / DigiLocker Sovereign Registry Verification</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="rounded-xl border border-border bg-accent/10 p-4 space-y-3.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-muted-foreground">Document Name:</span>
+                  <span className="font-semibold text-foreground max-w-[240px] truncate">{file?.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-muted-foreground">Document Size:</span>
+                  <span className="font-semibold text-foreground">{(file!.size / 1024 / 1024).toFixed(2)} MB</span>
+                </div>
+                <div className="space-y-1">
+                  <span className="block text-muted-foreground text-[10px] font-bold uppercase tracking-wider">Browser Hashed Fingerprint (SHA-256)</span>
+                  {isHashing ? (
+                    <div className="flex items-center gap-2 text-xs text-primary font-medium py-1">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Computing checksum inside browser...</span>
+                    </div>
+                  ) : (
+                    <span className="font-mono text-foreground text-xs block bg-background/65 border border-border p-2.5 rounded-lg break-all select-all">{clientHash}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-emerald-500/5 p-4 flex gap-3 text-xs text-muted-foreground">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-semibold text-foreground block">Integrity Certification</span>
+                  <p className="leading-relaxed">
+                    By proceeding, you certify that the file selected is authentic. The browser has locked this cryptographic fingerprint, which will be matched by the server and immutably anchored on the Solana blockchain.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter className="bg-muted/10 p-6 border-t border-border flex justify-end gap-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowIntegrityModal(false)}
+                className="border-border bg-transparent text-foreground hover:bg-accent rounded-xl text-sm font-semibold transition-all"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => {
+                  setShowIntegrityModal(false);
+                  setPaymentStep('summary');
+                }}
+                disabled={isHashing || !clientHash}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl text-sm transition-all shadow-md flex items-center gap-1.5"
+              >
+                Confirm & Proceed
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )}
 
       <footer className="py-4 border-t border-border text-center text-xs text-muted-foreground bg-muted/20">
         &copy; 2026 Time Lock. All rights reserved.

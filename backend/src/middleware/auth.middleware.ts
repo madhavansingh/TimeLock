@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../config/db';
+import { basePrisma, tenantContextStorage, TenantContext } from '../config/db';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_hackathon';
 
@@ -28,7 +28,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
-    const userExists = await prisma.user.findUnique({
+    const userExists = await basePrisma.user.findUnique({
       where: { userId: decoded.userId }
     });
     
@@ -44,7 +44,21 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     }
 
     (req as AuthenticatedRequest).user = decoded;
-    next();
+
+    // Propagate the user's specific tenant context downstream
+    const context: TenantContext = {
+      tenantId: userExists.tenantId || 'sovereign-tenant',
+      residency: {
+        country: userExists.residencyCountry,
+        state: userExists.residencyState,
+        district: userExists.residencyDistrict
+      },
+      clearance: userExists.securityClearance
+    };
+
+    tenantContextStorage.run(context, () => {
+      next();
+    });
   } catch (err) {
     return res.status(401).json({
       data: null,
@@ -67,19 +81,32 @@ export async function optionalAuthMiddleware(req: Request, res: Response, next: 
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
-    const userExists = await prisma.user.findUnique({
+    const userExists = await basePrisma.user.findUnique({
       where: { userId: decoded.userId }
     });
     
     if (userExists) {
       (req as AuthenticatedRequest).user = decoded;
-    } else {
-      (req as AuthenticatedRequest).user = undefined;
+      
+      const context: TenantContext = {
+        tenantId: userExists.tenantId || 'sovereign-tenant',
+        residency: {
+          country: userExists.residencyCountry,
+          state: userExists.residencyState,
+          district: userExists.residencyDistrict
+        },
+        clearance: userExists.securityClearance
+      };
+
+      return tenantContextStorage.run(context, () => {
+        next();
+      });
     }
   } catch (err) {
-    // Treat invalid or expired token as anonymous/unauthenticated
-    (req as AuthenticatedRequest).user = undefined;
+    // Treat invalid or expired token as anonymous
   }
+  
+  (req as AuthenticatedRequest).user = undefined;
   next();
 }
 

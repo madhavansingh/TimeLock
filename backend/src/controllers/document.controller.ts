@@ -26,6 +26,22 @@ export class DocumentController {
       }
 
       const body = LocalRegisterDocumentSchema.parse(req.body);
+      
+      const receiptData = {
+        clientHash: body.clientHash,
+        uploadTimestamp: body.uploadTimestamp,
+        uploadSessionId: body.uploadSessionId,
+        algorithm: body.algorithm || 'SHA256',
+        frontendVersion: body.frontendVersion,
+        browserTimezone: body.browserTimezone,
+        browserUserAgent: body.browserUserAgent || req.headers['user-agent'] || 'unknown',
+        browserLanguage: body.browserLanguage,
+        clientVersion: body.clientVersion,
+        ipAddress: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',
+        headers: req.headers,
+        requestId: (req.headers['x-request-id'] || 'unknown') as string
+      };
+
       const doc = await DocumentService.uploadAndRegister(
         req.user!.userId,
         body.title,
@@ -38,7 +54,8 @@ export class DocumentController {
         body.propertyId,
         body.registrationNumber,
         body.ownerName,
-        body.paymentId
+        body.paymentId,
+        receiptData
       );
 
       res.status(201).json({
@@ -47,7 +64,8 @@ export class DocumentController {
           hash: doc.contentHash,
           cid: doc.ipfsReference?.cid || 'QmSimulatedCID',
           status: doc.status,
-          onchainTxSignature: doc.onchainTxSignature
+          onchainTxSignature: doc.onchainTxSignature,
+          uploadReceipt: doc.uploadReceipt
         },
         error: null,
         requestId: req.headers['x-request-id'] || 'unknown'
@@ -108,7 +126,8 @@ export class DocumentController {
           assignedNotary: true,
           verificationCase: { include: { evidence: true } },
           metadata: true,
-          owner: true
+          owner: true,
+          uploadReceipt: true
         }
       });
 
@@ -186,7 +205,8 @@ export class DocumentController {
               historyCount: Math.max(0, ownershipRecords.length - 1),
               latestTransferDate: latestTransfer ? latestTransfer.startDate.toISOString() : null,
               transferStatus: doc.status === 'FULLY_EXECUTED' ? 'FINALIZED' : 'ACTIVE'
-            }
+            },
+            uploadReceipt: doc.uploadReceipt
           },
           error: null,
           requestId: req.headers['x-request-id'] || 'unknown'
@@ -256,7 +276,8 @@ export class DocumentController {
             historyCount: Math.max(0, ownershipRecords.length - 1),
             latestTransferDate: latestTransfer ? latestTransfer.startDate.toISOString() : null,
             transferStatus: doc.status === 'FULLY_EXECUTED' ? 'FINALIZED' : 'ACTIVE'
-          }
+          },
+          uploadReceipt: doc.uploadReceipt
         },
         error: null,
         requestId: req.headers['x-request-id'] || 'unknown'
@@ -1112,4 +1133,53 @@ export class DocumentController {
       next(err);
     }
   }
+
+  /**
+   * Downloadable upload receipt PDF.
+   */
+  public static async downloadReceiptPdf(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const doc = await prisma.document.findUnique({
+        where: { documentId: id }
+      });
+
+      if (!doc) {
+        return res.status(404).json({
+          data: null,
+          error: { code: 'DOCUMENT_NOT_FOUND', message: 'Document not found.' },
+          requestId: req.headers['x-request-id'] || 'unknown'
+        });
+      }
+
+      const viewProfile = await DocumentController.resolveViewProfile(doc, req.user);
+      if (viewProfile === 'PUBLIC_VIEW') {
+        return res.status(403).json({
+          data: null,
+          error: { code: 'FORBIDDEN', message: 'Access denied. You do not have permission to download this receipt.' },
+          requestId: req.headers['x-request-id'] || 'unknown'
+        });
+      }
+
+      const pdfBuffer = await DocumentService.generateUploadReceiptPDF(id);
+
+      // Record verification event for receipt download
+      await prisma.verificationEvent.create({
+        data: {
+          documentId: id,
+          eventType: 'RECEIPT_DOWNLOADED',
+          actorUserId: req.user?.userId || null,
+          actorLabel: req.user ? `${req.user.role} User` : 'Anonymous Viewer',
+          onchainTxRef: doc.onchainTxSignature || null
+        }
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${doc.title.replace(/\s+/g, '_')}_upload_receipt.pdf"`);
+      return res.send(pdfBuffer);
+    } catch (err) {
+      next(err);
+    }
+  }
 }
+

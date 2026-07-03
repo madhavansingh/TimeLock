@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, ShieldCheck, FileCheck } from "lucide-react";
-import { AnimatedSphere } from "./animated-sphere";
+import dynamic from "next/dynamic";
+
+const AnimatedSphere = dynamic(
+  () => import("./animated-sphere").then((m) => m.AnimatedSphere),
+  { ssr: false }
+);
 import Link from "next/link";
 
 const words = ["lock", "verify", "secure", "trust"];

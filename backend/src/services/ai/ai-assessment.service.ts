@@ -10,10 +10,19 @@ export class AiAssessmentService {
    * Logs errors but does not block the main process.
    */
   public static async triggerRegeneration(documentId: string, triggerEvent: string): Promise<void> {
-    // Run asynchronously
-    this.runAnalysis(documentId, triggerEvent).catch(err => {
-      logger.error(`[AiAssessmentService] Async analysis failed for document ${documentId}: ${err.message}`);
-    });
+    // Run AI analysis and then trigger Digital Twin recalculation
+    this.runAnalysis(documentId, triggerEvent)
+      .then(() => {
+        try {
+          const { AutonomousVerificationEngine } = require('./ave.service');
+          AutonomousVerificationEngine.triggerRecalculation(documentId, triggerEvent);
+        } catch (aveErr: any) {
+          logger.error(`[AiAssessmentService] Failed to trigger AVE recalculation: ${aveErr.message}`);
+        }
+      })
+      .catch(err => {
+        logger.error(`[AiAssessmentService] Async analysis failed for document ${documentId}: ${err.message}`);
+      });
   }
 
   /**

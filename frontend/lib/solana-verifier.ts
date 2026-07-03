@@ -120,7 +120,7 @@ export async function verifyDocumentOnChain(
   expectedStatus: string,
   expectedContentHash: string | null, // can be '[REDACTED]' or the calculated hash
   programIdStr: string = 'EbKjjyvxck5REvVXTXuAvPDrydzKFniiGgLdKSeyfc3w',
-  rpcUrl: string = 'https://api.devnet.solana.com'
+  rpcUrl: string = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.devnet.solana.com'
 ): Promise<{ success: boolean; details?: VerificationDetails; error?: string }> {
   try {
     const { pda } = await deriveDocumentPDA(documentId, programIdStr);
@@ -190,3 +190,82 @@ export async function verifyDocumentOnChain(
     return { success: false, error: err.message || 'Error occurred during on-chain verification.' };
   }
 }
+
+export const SIGNATURE_RECORD_DISCRIMINATOR = [131, 228, 158, 203, 39, 52, 166, 51];
+
+export interface SignatureRecordDetails {
+  pdaAddress: string;
+  signerRole: number;
+  signerPubkey: string;
+  signedAt: number;
+  offChainCertRef: string;
+  isValid: boolean;
+}
+
+export async function verifySignatureRecordOnChain(
+  documentId: string,
+  signerRoleByte: number,
+  expectedCertRefHashHex: string | null,
+  programIdStr: string = 'EbKjjyvxck5REvVXTXuAvPDrydzKFniiGgLdKSeyfc3w',
+  rpcUrl: string = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.devnet.solana.com'
+): Promise<{ success: boolean; details?: SignatureRecordDetails; error?: string }> {
+  try {
+    const { pda: docPda } = await deriveDocumentPDA(documentId, programIdStr);
+    const programId = new PublicKey(programIdStr);
+    
+    // Seeds: signature, documentPda, [signerRoleByte]
+    const [pda] = PublicKey.findProgramAddressSync(
+      [
+        new TextEncoder().encode('signature'),
+        docPda.toBuffer(),
+        new Uint8Array([signerRoleByte])
+      ],
+      programId
+    );
+    const pdaAddress = pda.toBase58();
+
+    const connection = new Connection(rpcUrl, 'confirmed');
+    const accountInfo = await connection.getAccountInfo(pda);
+
+    if (!accountInfo) {
+      return { success: false, error: 'Signature record PDA account does not exist on Solana Devnet ledger.' };
+    }
+
+    const data = new Uint8Array(accountInfo.data);
+    if (data.length < 113) {
+      return { success: false, error: `SignatureRecord data too short: ${data.length} bytes` };
+    }
+
+    // Check discriminator
+    for (let i = 0; i < 8; i++) {
+      if (data[i] !== SIGNATURE_RECORD_DISCRIMINATOR[i]) {
+        return { success: false, error: 'Account discriminator mismatch. Not a valid SignatureRecord.' };
+      }
+    }
+
+    const signerRole = data[40];
+    const signerPubkey = new PublicKey(data.slice(41, 73)).toBase58();
+    const signedAt = readInt64LE(data, 73);
+    const offChainCertRef = bytesToHex(data.slice(81, 113));
+
+    let isValid = true;
+    if (expectedCertRefHashHex) {
+      isValid = offChainCertRef.toLowerCase() === expectedCertRefHashHex.toLowerCase();
+    }
+
+    return {
+      success: isValid,
+      details: {
+        pdaAddress,
+        signerRole,
+        signerPubkey,
+        signedAt,
+        offChainCertRef,
+        isValid
+      }
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Error occurred during on-chain signature verification.' };
+  }
+}
+

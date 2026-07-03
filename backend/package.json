@@ -1,16 +1,18 @@
 {
-  "name": "backend",
+  "name": "@timelock/backend",
   "version": "1.0.0",
   "description": "Express.js backend for Legal TimeLock Network (LTN)",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts"
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "lint": "tsc --noEmit",
+    "test": "echo \"No test suite specified\""
   },
   "dependencies": {
     "@prisma/client": "^5.13.0",
-    "@solana/web3.js": "^1.95.2",
+    "@solana/web3.js": "^1.98.4",
     "bcrypt": "^6.0.0",
     "bs58": "^6.0.0",
     "cors": "^2.8.5",

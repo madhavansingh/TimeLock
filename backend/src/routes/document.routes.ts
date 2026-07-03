@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { DocumentController } from '../controllers/document.controller';
+import { TwinController } from '../controllers/twin.controller';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth.middleware';
 import { rbacMiddleware } from '../middleware/rbac.middleware';
 
@@ -145,8 +146,17 @@ router.get(
 // Download Certificate (Public verification endpoint with optional auth)
 router.get('/:id/certificate', certificateLimiter, optionalAuthMiddleware, DocumentController.downloadCertificate);
 
+// Download Sovereign Upload Receipt PDF (Public verification endpoint with optional auth)
+router.get('/:id/receipt/pdf', certificateLimiter, optionalAuthMiddleware, DocumentController.downloadReceiptPdf);
+
 // AI Verification Insights
 router.get('/:id/ai-insights', authMiddleware, DocumentController.getAiInsights);
 router.post('/:id/ai-insights/regenerate', authMiddleware, DocumentController.regenerateAiInsights);
+
+// Digital Twin & Verification Passport routes
+router.get('/ave/metrics', authMiddleware, TwinController.getGlobalMetrics);
+router.get('/:id/twin', authMiddleware, TwinController.getActiveTwin);
+router.get('/:id/twin/history', authMiddleware, TwinController.getTwinHistory);
+router.post('/:id/twin/recalculate', authMiddleware, TwinController.recalculateTwin);
 
 export default router;

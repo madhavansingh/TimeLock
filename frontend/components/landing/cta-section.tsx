@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
-import { AnimatedTetrahedron } from "./animated-tetrahedron";
+import dynamic from "next/dynamic";
+
+const AnimatedTetrahedron = dynamic(
+  () => import("./animated-tetrahedron").then((m) => m.AnimatedTetrahedron),
+  { ssr: false }
+);
 import Link from "next/link";
 
 export function CtaSection() {

@@ -6,11 +6,7 @@ export interface SmsProvider {
 
 export class ConsoleSmsProvider implements SmsProvider {
   public async sendOtp(phone: string, otp: string): Promise<void> {
-    console.log(`\n========================================`);
-    console.log(`[SMS OTP SANDBOX] To: ${phone}`);
-    console.log(`[SMS OTP SANDBOX] Verification Code: ${otp}`);
-    console.log(`========================================\n`);
-    logger.info(`[ConsoleSmsProvider] Sent OTP ${otp} to ${phone}`);
+    logger.info(`[ConsoleSmsProvider] SMS OTP SANDBOX - Recipient: ${phone} | Verification Code: ${otp}`, { phone, otp });
   }
 }
 

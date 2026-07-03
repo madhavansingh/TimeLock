@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { calculateSHA256 } from '@/lib/crypto';
 import { apiClient } from '@/lib/api';
-import { verifyDocumentOnChain } from '@/lib/solana-verifier';
+import { verifyDocumentOnChain, verifySignatureRecordOnChain } from '@/lib/solana-verifier';
 import { PublicKey } from '@solana/web3.js';
 
 
@@ -62,9 +62,14 @@ function VerifyContent() {
   const [blockchainError, setBlockchainError] = useState<string>('');
   const [uploadedFileHash, setUploadedFileHash] = useState<string | null>(null);
 
+  // Upload receipt blockchain state
+  const [receiptBlockchainState, setReceiptBlockchainState] = useState<'idle' | 'loading' | 'verified' | 'mismatch' | 'unavailable'>('idle');
+  const [receiptBlockchainDetails, setReceiptBlockchainDetails] = useState<any | null>(null);
+
   const runSolanaVerification = async (doc: any, customHash?: string | null) => {
     if (!doc.onchainTxSignature) {
       setBlockchainState('unavailable');
+      setReceiptBlockchainState('unavailable');
       return;
     }
 
@@ -89,6 +94,18 @@ function VerifyContent() {
           statusValid: true,
           hashValid: true
         });
+
+        if (doc.uploadReceipt) {
+          setReceiptBlockchainDetails({
+            pdaAddress: 'MockSigPDA1111111111111111111111111111111',
+            signerRole: 10,
+            signerPubkey: 'MockRelayerPubkey111111111111111111111111',
+            signedAt: Math.floor(Date.now() / 1000),
+            offChainCertRef: doc.uploadReceipt.receiptHash,
+            isValid: true
+          });
+          setReceiptBlockchainState('verified');
+        }
       } catch (e) {
         console.error(e);
       }
@@ -98,6 +115,7 @@ function VerifyContent() {
 
     setBlockchainState('loading');
     setBlockchainError('');
+    setReceiptBlockchainState('loading');
 
     try {
       const hashToCheck = customHash || uploadedFileHash || (doc.contentHash !== '[REDACTED]' ? doc.contentHash : null);
@@ -118,12 +136,86 @@ function VerifyContent() {
           setBlockchainDetails(res.details);
         }
       }
+
+      // Verify signature record for upload receipt if present
+      if (doc.uploadReceipt) {
+        try {
+          const sigRes = await verifySignatureRecordOnChain(
+            doc.documentId,
+            10, // Sovereign Upload Receipt role byte
+            doc.uploadReceipt.receiptHash
+          );
+          if (sigRes.success && sigRes.details) {
+            setReceiptBlockchainState('verified');
+            setReceiptBlockchainDetails(sigRes.details);
+          } else {
+            setReceiptBlockchainState('mismatch');
+            if (sigRes.details) {
+              setReceiptBlockchainDetails(sigRes.details);
+            }
+          }
+        } catch (sigErr) {
+          console.error('[Solana Receipt Verification Error]:', sigErr);
+          setReceiptBlockchainState('unavailable');
+        }
+      } else {
+        setReceiptBlockchainState('idle');
+      }
     } catch (err: any) {
       console.error('[Solana Verification Error]:', err);
       setBlockchainState('unavailable');
       setBlockchainError('Blockchain verification temporarily unavailable.');
     }
   };
+
+  const downloadReceiptPdf = async () => {
+    if (!docDetails?.documentId) return;
+    try {
+      setLoading(true);
+      const baseUrl = apiClient.getBaseUrl();
+      const url = `${baseUrl}/documents/${docDetails.documentId}/receipt/pdf`;
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download receipt PDF');
+      }
+      
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.href = blobUrl;
+      downloadAnchor.download = `${docDetails.title.replace(/\s+/g, '_')}_upload_receipt.pdf`;
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      console.error('Error downloading receipt PDF:', err);
+      alert(err.message || 'Failed to download receipt PDF.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadReceiptJson = () => {
+    if (!docDetails?.uploadReceipt) return;
+    const receiptData = docDetails.uploadReceipt;
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(receiptData, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `upload_receipt_${docDetails.documentId}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
 
   const loadDetails = async (id: string, customHash?: string | null) => {
     setDetailsLoading(true);
@@ -273,32 +365,63 @@ function VerifyContent() {
   const getTimelineEvents = () => {
     if (!docDetails) return [];
     const baseTime = new Date(docDetails.timestamp);
-    const events = [
-      {
-        title: 'Document Registered & Anchored',
-        description: 'Initial entry created on Solana ledger.',
-        timestamp: baseTime.toLocaleString(),
+    const events = [];
+
+    // If uploadReceipt is present, it represents the very first step of the chain of custody!
+    if (docDetails.uploadReceipt) {
+      events.push({
+        title: 'Sovereign Client Upload Receipt Created',
+        description: `Browser-verified SHA-256 fingerprint frozen in deterministic, alphabetized receipt payload.`,
+        timestamp: new Date(docDetails.uploadReceipt.uploadTimestamp).toLocaleString(),
         status: 'COMPLETED'
-      },
-      {
-        title: 'Metadata Extracted & Validated',
-        description: 'AI model processed registry schema and properties.',
-        timestamp: new Date(baseTime.getTime() + 2 * 60 * 1000).toLocaleString(),
+      });
+
+      events.push({
+        title: 'Client-Server Hash Integrity Verified',
+        description: `Dual constant-time verification completed: Client Hash matched Server Hash.`,
+        timestamp: new Date(docDetails.uploadReceipt.uploadTimestamp).toLocaleString(),
         status: 'COMPLETED'
-      },
-      {
-        title: 'AI Verification Analysis Finished',
-        description: 'No direct evidence of fraud or duplicate registration found.',
-        timestamp: new Date(baseTime.getTime() + 5 * 60 * 1000).toLocaleString(),
+      });
+    }
+
+    events.push({
+      title: 'Document Registered & Anchored',
+      description: 'Initial entry created on Solana ledger.',
+      timestamp: baseTime.toLocaleString(),
+      status: 'COMPLETED'
+    });
+
+    if (docDetails.uploadReceipt && docDetails.uploadReceipt.receiptBlockchainTx) {
+      events.push({
+        title: 'C3 Receipt Anchored on Solana Devnet',
+        description: `Sovereign receipt hash anchored on-chain with signature record PDA (role = 10).`,
+        timestamp: docDetails.uploadReceipt.receiptAnchoredAt 
+          ? new Date(docDetails.uploadReceipt.receiptAnchoredAt).toLocaleString()
+          : baseTime.toLocaleString(),
         status: 'COMPLETED'
-      },
-      {
-        title: 'Blockchain Fingerprint Created',
-        description: 'Decentralized IPFS CID anchored on the Solana ledger.',
-        timestamp: new Date(baseTime.getTime() + 10 * 60 * 1000).toLocaleString(),
-        status: 'COMPLETED'
-      }
-    ];
+      });
+    }
+
+    events.push({
+      title: 'Metadata Extracted & Validated',
+      description: 'AI model processed registry schema and properties.',
+      timestamp: new Date(baseTime.getTime() + 2 * 60 * 1000).toLocaleString(),
+      status: 'COMPLETED'
+    });
+
+    events.push({
+      title: 'AI Verification Analysis Finished',
+      description: 'No direct evidence of fraud or duplicate registration found.',
+      timestamp: new Date(baseTime.getTime() + 5 * 60 * 1000).toLocaleString(),
+      status: 'COMPLETED'
+    });
+
+    events.push({
+      title: 'Blockchain Fingerprint Created',
+      description: 'Decentralized IPFS CID anchored on the Solana ledger.',
+      timestamp: new Date(baseTime.getTime() + 10 * 60 * 1000).toLocaleString(),
+      status: 'COMPLETED'
+    });
 
     if (docDetails.status === 'NOTARY_SIGNED' || docDetails.status === 'FULLY_EXECUTED') {
       const signedTime = docDetails.notarySummary?.signedAt 
@@ -543,6 +666,249 @@ function VerifyContent() {
                               <div className="mt-1">{getStatusBadge(docDetails.status)}</div>
                             </div>
                           </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Cryptographic Chain of Custody (C3) Integrity Grid */}
+                      <Card className="border-border bg-card/60 backdrop-blur-md overflow-hidden relative">
+                        <div className="absolute top-0 right-0 h-32 w-32 translate-x-12 -translate-y-12 bg-primary/5 rounded-full blur-2xl" />
+                        <CardHeader className="pb-3 border-b border-border/40">
+                          <div className="flex items-center justify-between gap-4 flex-wrap">
+                            <div className="space-y-1">
+                              <CardTitle className="text-base font-bold flex items-center gap-2">
+                                <Cpu className="h-5 w-5 text-primary animate-pulse" />
+                                Cryptographic Chain of Custody (C3)
+                              </CardTitle>
+                              <CardDescription className="text-xs">
+                                Multi-party end-to-end cryptographic verification grid
+                              </CardDescription>
+                            </div>
+                            <div>
+                              {docDetails.uploadReceipt ? (
+                                docDetails.uploadReceipt.clientHash === docDetails.uploadReceipt.serverHash ? (
+                                  <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-xs font-semibold px-2.5 py-1">
+                                    Client ↔ Server Integrity Verified
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-red-500/10 text-red-500 border border-red-500/25 text-xs font-semibold px-2.5 py-1">
+                                    Hash Mismatch Detected
+                                  </Badge>
+                                )
+                              ) : (
+                                <Badge className="bg-muted text-muted-foreground border border-border text-xs font-semibold px-2.5 py-1">
+                                  Legacy Hash Protocol
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </CardHeader>
+                        
+                        <CardContent className="pt-6 space-y-6">
+                          {/* Grid of hashes */}
+                          <div className="space-y-4">
+                            {/* 1. Sovereign Client Hash */}
+                            <div className="p-3.5 rounded-lg border border-border/40 bg-background/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                              <div className="space-y-1 sm:max-w-[40%]">
+                                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                  <User className="h-3.5 w-3.5 text-muted-foreground" />
+                                  Sovereign Client Hash
+                                </span>
+                                <p className="text-[11px] text-muted-foreground leading-normal">
+                                  Deed SHA-256 fingerprint generated in citizen's browser prior to transfer.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="font-mono text-[11px] text-foreground bg-muted/30 px-2 py-1 rounded truncate max-w-[180px] sm:max-w-[260px] select-all">
+                                  {docDetails.uploadReceipt?.clientHash || 'N/A (Pre-C3 Protocol)'}
+                                </span>
+                                {docDetails.uploadReceipt ? (
+                                  <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                    MATCH
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-muted text-muted-foreground border border-border text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                    LEGACY
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 2. Verified Server Hash */}
+                            <div className="p-3.5 rounded-lg border border-border/40 bg-background/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                              <div className="space-y-1 sm:max-w-[40%]">
+                                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                  <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
+                                  Verified Server Hash
+                                </span>
+                                <p className="text-[11px] text-muted-foreground leading-normal">
+                                  Deed SHA-256 fingerprint computed independently on registry backend.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="font-mono text-[11px] text-foreground bg-muted/30 px-2 py-1 rounded truncate max-w-[180px] sm:max-w-[260px] select-all">
+                                  {docDetails.uploadReceipt?.serverHash || (docDetails.contentHash !== '[REDACTED]' ? docDetails.contentHash : 'N/A')}
+                                </span>
+                                {docDetails.uploadReceipt ? (
+                                  docDetails.uploadReceipt.clientHash === docDetails.uploadReceipt.serverHash ? (
+                                    <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                      MATCH
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-red-500/10 text-red-500 border border-red-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                      MISMATCH
+                                    </Badge>
+                                  )
+                                ) : (
+                                  <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                    ANCHORED
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 3. Canonical Receipt Hash */}
+                            <div className="p-3.5 rounded-lg border border-border/40 bg-background/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                              <div className="space-y-1 sm:max-w-[40%]">
+                                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                                  Canonical Receipt Hash
+                                </span>
+                                <p className="text-[11px] text-muted-foreground leading-normal">
+                                  SHA-256 digest of key-sorted, deterministically serialized receipt payload.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="font-mono text-[11px] text-foreground bg-muted/30 px-2 py-1 rounded truncate max-w-[180px] sm:max-w-[260px] select-all">
+                                  {docDetails.uploadReceipt?.receiptHash || 'N/A (Pre-C3 Protocol)'}
+                                </span>
+                                {docDetails.uploadReceipt ? (
+                                  <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                    VERIFIED
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-muted text-muted-foreground border border-border text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                    LEGACY
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 4. On-chain Anchor Hash */}
+                            <div className="p-3.5 rounded-lg border border-border/40 bg-background/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                              <div className="space-y-1 sm:max-w-[40%]">
+                                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                                  <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                                  On-chain Solana Anchor
+                                </span>
+                                <p className="text-[11px] text-muted-foreground leading-normal">
+                                  The immutable hash record anchored in Solana signature PDA ledger.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <span className="font-mono text-[11px] text-foreground bg-muted/30 px-2 py-1 rounded truncate max-w-[180px] sm:max-w-[260px] select-all">
+                                  {docDetails.uploadReceipt 
+                                    ? (receiptBlockchainDetails?.offChainCertRef || 'Verifying Ledger...') 
+                                    : (blockchainDetails?.onchainHash || 'Verifying Ledger...')}
+                                </span>
+                                {docDetails.uploadReceipt ? (
+                                  receiptBlockchainState === 'verified' ? (
+                                    <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                      MATCH
+                                    </Badge>
+                                  ) : receiptBlockchainState === 'mismatch' ? (
+                                    <Badge className="bg-red-500/10 text-red-500 border border-red-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                      MISMATCH
+                                    </Badge>
+                                  ) : receiptBlockchainState === 'unavailable' ? (
+                                    <Badge className="bg-amber-500/10 text-amber-500 border border-amber-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0 animate-pulse">
+                                      UNAVAILABLE
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-muted text-muted-foreground border border-border text-[10px] font-semibold px-1.5 py-0.5 shrink-0 animate-pulse">
+                                      PENDING
+                                    </Badge>
+                                  )
+                                ) : (
+                                  blockchainState === 'verified' ? (
+                                    <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                      MATCH
+                                    </Badge>
+                                  ) : blockchainState === 'mismatch' ? (
+                                    <Badge className="bg-red-500/10 text-red-500 border border-red-500/25 text-[10px] font-semibold px-1.5 py-0.5 shrink-0">
+                                      MISMATCH
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-muted text-muted-foreground border border-border text-[10px] font-semibold px-1.5 py-0.5 shrink-0 animate-pulse">
+                                      PENDING
+                                    </Badge>
+                                  )
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 5. Optional Local Copy Hash (if verified) */}
+                            {uploadedFileHash && (
+                              <div className={`p-3.5 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-all ${
+                                verificationResult?.result === 'authentic' 
+                                  ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-600'
+                                  : 'border-red-500/30 bg-red-500/5 text-red-600'
+                              }`}>
+                                <div className="space-y-1 sm:max-w-[40%]">
+                                  <span className="font-semibold flex items-center gap-1.5">
+                                    <FileUp className="h-3.5 w-3.5" />
+                                    Uploaded Copy Hash
+                                  </span>
+                                  <p className="text-[11px] opacity-85 leading-normal">
+                                    The SHA-256 fingerprint of the local copy just uploaded for validation.
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <span className="font-mono text-[11px] bg-muted/30 px-2 py-1 rounded truncate max-w-[180px] sm:max-w-[260px] select-all">
+                                    {uploadedFileHash}
+                                  </span>
+                                  {verificationResult?.result === 'authentic' ? (
+                                    <Badge className="bg-emerald-500/15 text-emerald-500 border border-emerald-500/30 text-[10px] font-bold px-1.5 py-0.5 shrink-0">
+                                      MATCH
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-red-500/15 text-red-500 border border-red-500/30 text-[10px] font-bold px-1.5 py-0.5 shrink-0">
+                                      MISMATCH
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Metadata and Download actions */}
+                          {docDetails.uploadReceipt && (
+                            <div className="border-t border-border/40 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                              <div className="text-[11px] text-muted-foreground space-y-1">
+                                <p>Receipt ID: <span className="font-mono">{docDetails.uploadReceipt.receiptId}</span></p>
+                                <p>Anchored via relayer key: <span className="font-mono">{receiptBlockchainDetails?.signerPubkey || docDetails.uploadReceipt.receiptPda || 'Pending...'}</span></p>
+                              </div>
+                              <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <Button 
+                                  onClick={downloadReceiptJson} 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="flex-1 sm:flex-none text-xs rounded-full gap-1.5 border-border/60 hover:bg-accent/10 font-bold"
+                                >
+                                  <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                                  Download JSON
+                                </Button>
+                                <Button 
+                                  onClick={downloadReceiptPdf} 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="flex-1 sm:flex-none text-xs rounded-full gap-1.5 border-border/60 hover:bg-accent/10 font-bold"
+                                >
+                                  <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                                  Download PDF
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
 

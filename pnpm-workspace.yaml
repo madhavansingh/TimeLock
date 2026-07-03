@@ -1,0 +1,24 @@
+packages:
+  - 'backend'
+  - 'frontend'
+  - 'blockchain'
+  - 'shared'
+
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  bcrypt: true
+  bufferutil: true
+  prisma: true
+  sharp: true
+  unrs-resolver: true
+  utf-8-validate: true
+
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - 'bcrypt'
+  - 'bufferutil'
+  - 'prisma'
+  - 'sharp'
+  - 'utf-8-validate'

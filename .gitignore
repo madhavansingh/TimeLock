@@ -19,15 +19,23 @@ coverage/
 .env.*
 .env.local
 !.env.example
+!.env.production.example
 
-# OS Metadata
+# OS & Editor Metadata
 .DS_Store
 **/.DS_Store
+Thumbs.db
+**/*.swp
+.idea/
+.vscode/
 
 # Logs
 logs/
 **/logs/
 *.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
 # Rust / Anchor / Solana Artifacts
 target/
@@ -41,3 +49,16 @@ blockchain/.anchor/
 # Prisma generated caches
 .prisma/
 **/prisma/generated-client/
+
+# Lockfile & Build Caches
+*.tsbuildinfo
+.vercel/
+.turbo/
+.pnpm-store/
+
+# Scratch & Temporary Testing Files
+scratch/
+**/scratch/
+
+# Compiled JS build artifacts in shared package
+shared/*.js
